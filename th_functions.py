@@ -1,5 +1,13 @@
 from units import Q_
 import numpy as np
+from CoolProp.CoolProp import PropsSI
+
+def compute_NTU_counterflow(e, C_r=None):
+    if C_r is None:
+        NTU = e * (1 - e) ** -1
+    else:
+        NTU = ((C_r - 1) ** -1) * np.log((e - 1) * (e * C_r - 1) ** -1)
+    return NTU
 
 def compute_Nu(fluid, Re=None, Pr=None, Pe=None):
     if fluid == "Sodium":
@@ -22,6 +30,13 @@ def compute_Nu_Dittus_Boelter(Re, Pr, heating=True):
         Nu = 0.023 * Re ** 0.8 * Pr ** 0.3
     return Nu
 
+def compute_Nu_Graber_Rieger(Pe, PD_ratio):
+    a = 0.25 + 6.20 * PD_ratio
+    b = -0.007 + 0.032 * PD_ratio
+    c = 0.8 - 0.024 * PD_ratio
+    Nu = a + b * Pe ** c
+    return Nu
+
 def compute_Nu_Seban_Shimazaki(Pe):
     Nu = 5.0 + 0.025 * Pe ** 0.8
     return Nu
@@ -37,12 +52,17 @@ def fluid_properties(fluid, T, P):
         k = compute_Na_k(T)
         rho = compute_Na_rho(T)
         mu = compute_Na_mu(T)
+    else:
+        cp = Q_(PropsSI('C', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'J/kg/K')
+        k = Q_(PropsSI('L', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'W/m/K')
+        rho = Q_(PropsSI('D', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'kg / m ** 3')
+        mu = Q_(PropsSI('V', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'Pa*s')
     return cp, k, rho, mu
 
 def compute_Na_cp(T):
     T_ = T.m_as('K')
     cp = 1.6582 - 8.4790e-4 * T_ + 4.4541e-7 * T_ ** 2
-    return Q_(cp, "J/kg/K")
+    return Q_(cp, "kJ/kg/K")
 
 def compute_Na_k(T):
     T_ = T.m_as('K')
@@ -62,3 +82,13 @@ def compute_Na_mu(T):
     T_ = T.m_as("K")
     mu = np.exp(-6.4406 - 0.3958 * np.log(T_) + 556.835 / T_)
     return Q_(mu, "Pa * s")
+
+def compute_k_SS304(T):
+    T_ = T.m_as('K')
+    k = 8.16 + 1.618e-2 * T_
+    return Q_(k, "W/m/K")
+
+def compute_k_SS316(T):
+    T_ = T.m_as('K')
+    k = 12.41 + 3.279e-3 * T_
+    return Q_(k, "W/m/K")
