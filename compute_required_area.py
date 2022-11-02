@@ -1,23 +1,26 @@
 from units import Q_
 import numpy as np
+import scipy.optimize
 from th_functions import fluid_properties, compute_Nu_Dittus_Boelter, \
-    compute_Nu_Seban_Shimazaki, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow
+    compute_Nu_Seban_Shimazaki, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, \
+    compute_friction_factor
 
 def compute_required_area(inputs):
     # initialize thermal inputs
     Q = Q_(inputs["Thermal Power (MW)"], 'MW')
+    L = Q_(inputs["Flow Length (m)"], 'm')
     primary_fluid = inputs["Primary Fluid"]
     primary_hot = Q_(inputs["Primary Hot Temperature (C)"], 'degC').to('K')
     primary_cold = Q_(inputs["Primary Cold Temperature (C)"], 'degC').to('K')
     primary_mdot = Q_(inputs["Primary Mass Flow Rate (kg/s)"], 'kg/s')
     primary_P = Q_(inputs["Primary Pressure (kPa)"], 'kPa')
-    primary_velocity = Q_(inputs["Primary Flow Velocity (m/s)"], 'm/s')
+    primary_deltaP = Q_(inputs["Primary Pressure Drop (kPa)"], 'kPa')
     secondary_fluid = inputs["Secondary Fluid"]
     secondary_hot = Q_(inputs["Secondary Hot Temperature (C)"], 'degC').to('K')
     secondary_cold = Q_(inputs["Secondary Cold Temperature (C)"], 'degC').to('K')
     secondary_mdot = Q_(inputs["Secondary Mass Flow Rate (kg/s)"], 'kg/s')
     secondary_P = Q_(inputs["Secondary Pressure (kPa)"], 'kPa')
-    secondary_velocity = Q_(inputs["Secondary Flow Velocity (m/s)"], 'm/s')
+    secondary_deltaP = Q_(inputs["Secondary Pressure Drop (kPa)"], 'kPa')
 
     # fill out missing thermal parameters
     if np.isnan(primary_mdot.m):
@@ -46,7 +49,7 @@ def compute_required_area(inputs):
     # Initialize geometry
     plate_thickness = Q_(inputs["Plate thickness (m)"], 'm')
     plate_material = inputs["Plate material"]
-    D_h = Q_(inputs["Hydraulic Diameter (m)"], 'm')
+    D_h = 2 * Q_(inputs["Plate gap (m)"], 'm')
 
     # Compute plate thermal conductivity
     T_avg = (primary_hot + primary_cold + secondary_hot + secondary_cold) / 4
@@ -57,6 +60,12 @@ def compute_required_area(inputs):
     else:
         raise ValueError("Given plate material of {} is not currently supported.".format(plate_material))
 
+    # Determine flow velocities
+    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
+    primary_velocity = Q_(primary_velocity, 'm/s')
+    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
+    secondary_velocity = Q_(secondary_velocity, 'm/s')
+
     # Calculate heat transfer coefficients
     primary_Re = (primary_rho * primary_velocity * D_h * primary_mu ** -1).to('')
     primary_Pr = (primary_mu * primary_cp * primary_k ** -1).to('')
@@ -65,6 +74,7 @@ def compute_required_area(inputs):
         primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
     else:
         primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+    print(primary_k)
     primary_h = primary_Nu * primary_k * D_h ** -1
 
     secondary_Re = (secondary_rho * secondary_velocity * D_h * secondary_mu ** -1).to('')
@@ -108,18 +118,29 @@ def compute_required_area(inputs):
     
     # Store results to be displayed
     results = {}
+    results["Primary velocity"] = primary_velocity
     results["Primary Re"] = primary_Re
     results["Primary Nu"] = primary_Nu
     results["Primary htc"] = primary_h
+    results["Secondary velocity"] = secondary_velocity
     results["Secondary Re"] = secondary_Re
     results["Secondary Nu"] = secondary_Nu
     results["Secondary htc"] = secondary_h
+    results["Overall htc"] = U
+    results["NTU"] = NTU
     results["UA LMTD method"] = UA_LMTD
     results["UA e-NTU method"] = UA_ENTU
     results["Heat transfer area LMTD method"] = A_LMTD
     results["Heat transfer area e-NTU method"] = A_ENTU
 
     return results
+
+def _compute_velocity(v, rho, D, mu, L, deltaP):
+    v_ = Q_(v, 'm/s')
+    Re = (rho * v_ * D * mu ** -1).to("")
+    f = compute_friction_factor(Re)
+    dP = (0.5 * f * rho * v_ ** 2 * L * D ** -1).to('kPa')
+    return (deltaP - dP).m_as('kPa')
 
 def fill_out_parameters(Q, c_p, T_hot=None, T_cold=None, m_dot=None):
     """

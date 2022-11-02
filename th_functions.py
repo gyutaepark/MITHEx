@@ -52,6 +52,11 @@ def fluid_properties(fluid, T, P):
         k = compute_Na_k(T)
         rho = compute_Na_rho(T)
         mu = compute_Na_mu(T)
+    elif fluid == "Organic":
+        cp = Q_(2.5, 'kJ/kg/K')
+        k = Q_(0.11, 'W/m/K')
+        rho = Q_(813., 'kg/m**3')
+        mu = Q_(2.3e-4, 'Pa*s')
     else:
         cp = Q_(PropsSI('C', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'J/kg/K')
         k = Q_(PropsSI('L', 'T', T.m_as('K'), 'P', P.m_as('Pa'), fluid), 'W/m/K')
@@ -92,3 +97,7 @@ def compute_k_SS316(T):
     T_ = T.m_as('K')
     k = 12.41 + 3.279e-3 * T_
     return Q_(k, "W/m/K")
+
+def compute_friction_factor(Re):
+    f = (0.79 * np.log(Re.m_as("")) - 1.64) ** -2
+    return f
