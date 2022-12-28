@@ -30,11 +30,14 @@ def compute_cycle_efficiency(inputs):
     h_3 = PropsSI("H", "T", T_3, "P", P_3, secondary_fluid)
     s_3 = PropsSI("S", "T", T_3, "P", P_3, secondary_fluid)
 
-    # State 1 is immediately before entering the pump/compressor
+    # Calculate the pump/compressor power
     P_1 = P_2 / compression_raio
-    # Approximate the fluid density with state 2
-    rho = PropsSI("D", "T", T_2, "P", P_2, secondary_fluid)
-    Q_pump = (secondary_mdot * (P_2 - P_1) / rho) / e_pump
+    if secondary_fluid == "Water":
+        # Approximate the fluid density with state 2
+        rho = PropsSI("D", "T", T_2, "P", P_2, secondary_fluid)
+        Q_pump = (secondary_mdot * (P_2 - P_1) / rho) / e_pump
+    elif secondary_fluid == "Air":
+        return dict()
 
     # State 4 is immediately after exiting the turbine
     P_4 = P_1

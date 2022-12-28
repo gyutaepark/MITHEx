@@ -25,36 +25,36 @@ def compute_required_area(inputs):
     secondary_deltaP = Q_(inputs["Secondary Pressure Drop (kPa)"], 'kPa').m_as('Pa')
 
     # fill out missing thermal parameters
-    if np.isnan(primary_mdot.m):
+    if np.isnan(primary_mdot):
         primary_avg_temperature = (primary_hot + primary_cold) / 2
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_avg_temperature, primary_P)
         primary_mdot = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, T_cold=primary_cold)
-    elif np.isnan(primary_hot.m):
+    elif np.isnan(primary_hot):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_cold, primary_P)
         primary_hot = fill_out_parameters(Q, primary_cp, T_cold=primary_cold, m_dot=primary_mdot)
-    elif np.isnan(primary_cold.m):
+    elif np.isnan(primary_cold):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_hot, primary_P)
         primary_cold = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, m_dot=primary_mdot)
 
     # fill out missing thermal parameters
-    if np.isnan(secondary_mdot.m):
+    if np.isnan(secondary_mdot):
         secondary_avg_temperature = (secondary_hot + secondary_cold) / 2
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_avg_temperature, secondary_P)
         secondary_mdot = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, T_cold=secondary_cold)
-    elif np.isnan(secondary_hot.m):
+    elif np.isnan(secondary_hot):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_cold, secondary_P)
         secondary_hot = fill_out_parameters(Q, secondary_cp, T_cold=secondary_cold, m_dot=secondary_mdot)
-    elif np.isnan(secondary_cold.m):
+    elif np.isnan(secondary_cold):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_hot, secondary_P)
         secondary_cold = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
 
     # Initialize geometry
-    plate_thickness = Q_(inputs["Plate thickness (m)"], 'm')
+    plate_thickness = inputs["Plate thickness (m)"]
     plate_material = inputs["Plate material"]
-    D = Q_(inputs["Channel Diameter (m)"], 'm')
-    flow_area = (np.pi * D ** 2) / 8
-    P_wetted = D + np.pi * D / 2
-    D_h = 4 * flow_area / P_wetted
+    D = inputs["Channel Diameter (m)"]
+    flow_area = np.pi * D ** 2 / 8
+    perimeter = D + np.pi * D / 2
+    D_h = 4 * flow_area / perimeter
 
     # Compute plate thermal conductivity
     T_avg = (primary_hot + primary_cold + secondary_hot + secondary_cold) / 4
@@ -68,22 +68,26 @@ def compute_required_area(inputs):
     # Determine flow velocities by finding the limiting pressure drop
     # Both fluids should have an equal fraction of mass flow rate in each channel
     primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
-    primary_velocity = Q_(primary_velocity, 'm/s')
     primary_mdot_channel = primary_rho * primary_velocity * flow_area
     secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
-    secondary_velocity = Q_(secondary_velocity, 'm/s')
     secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
     primary_mdot_ratio = primary_mdot_channel / primary_mdot
     secondary_mdot_ratio = primary_mdot_channel / primary_mdot
 
+    if primary_mdot_ratio < secondary_mdot_ratio:
+        secondary_mdot_channel = secondary_mdot * primary_mdot_ratio
+        secondary_velocity = secondary_mdot_channel / (flow_area * secondary_rho)
+    else:
+        primary_mdot_channel = primary_mdot * secondary_mdot_ratio
+        primary_velocity = primary_mdot_channel / (flow_area * primary_rho)
+
     # Calculate heat transfer coefficients
     primary_Re = primary_rho * primary_velocity * D_h / primary_mu
     primary_Pr = primary_mu * primary_cp / primary_k
-    # if primary_fluid == "Sodium":
-    #     primary_Pe = primary_Re * primary_Pr
-    #     print(primary_Pe)
-    #     primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
+    if primary_fluid == "Sodium":
+        primary_Pe = primary_Re * primary_Pr
+        primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
     primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
     primary_h = primary_Nu * primary_k / D_h
 
@@ -128,14 +132,17 @@ def compute_required_area(inputs):
     
     # Store results to be displayed
     results = {}
-    results["Primary velocity"] = primary_velocity
+    results["Primary Velocity (m/s)"] = primary_velocity
     results["Primary Re"] = primary_Re
     results["Primary Nu"] = primary_Nu
-    results["Primary htc"] = primary_h
-    results["Secondary velocity"] = secondary_velocity
+    results["Primary htc (W/m2)"] = primary_h
+    results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
+    results["Secondary Velocity"] = secondary_velocity
     results["Secondary Re"] = secondary_Re
     results["Secondary Nu"] = secondary_Nu
-    results["Secondary htc"] = secondary_h
+    results["Secondary htc (W/m2)"] = secondary_h
+    results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
+    results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Overall htc"] = U
     results["NTU"] = NTU
     results["UA LMTD method"] = UA_LMTD
@@ -183,12 +190,20 @@ def compute_required_area_SG(inputs):
         raise ValueError("Primary cold temperature must be included as an input")
     elif secondary_cold is None:
         raise ValueError("Secondary cold temperature must be included as an input")
+    elif primary_hot is None:
+        raise ValueError("Primary hot temperature must be included as an input")
+    elif secondary_hot is None:
+        raise ValueError("Secondary hot temperature must be included as an input")
 
     # Initialize geometry
     plate_thickness = inputs["Plate thickness (m)"]
     plate_material = inputs["Plate material"]
     D = inputs["Channel Diameter (m)"]
     step_size = inputs["Step size (m)"]
+
+    # Initialize bounds of heat exchanger length solver
+    L_lower_bound = inputs["HX length lower bound (m)"]
+    L_upper_bound = inputs["HX length upper bound (m)"]
 
     # Import critical heat flux data
     G_scale = sdf.load('2006LUT.sdf', '/G', 'kg/(m2.s)')
@@ -304,7 +319,6 @@ def compute_required_area_SG(inputs):
                 if x_e > 0:
                     CHF = ((.008 / D_h) ** 0.5) * interpolate_CHF(G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
                     DNB = Q_step / hx_area > CHF
-                print("Boiling", primary_T, secondary_H)
 
             # At this point water has reached the superheated vapor state and boiling is no longer occurring
             # Iterate through the superheated region until right before the end of the heat exchanger
@@ -331,7 +345,6 @@ def compute_required_area_SG(inputs):
                 x_e = (secondary_H - fluid_sat) / H_fg
                 primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
                 primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
-                print("Superheated", primary_T, secondary_H)
 
             if searching:
                 return dP - secondary_deltaP
@@ -362,7 +375,7 @@ def compute_required_area_SG(inputs):
             return outlet_enthalpy - secondary_H_outlet
         else:
             return primary_mdot_channel, secondary_mdot_channel
-    HX_length = scipy.optimize.brentq(find_HX_length, 0.1, 2, rtol=1e-5)
+    HX_length = scipy.optimize.brentq(find_HX_length, L_lower_bound, L_upper_bound, rtol=1e-5)
     primary_mdot_channel, secondary_mdot_channel = find_HX_length(HX_length, searching=False)
 
     fluid_sat = PropsSI('H', 'P', secondary_P, 'Q', 0, "Water")
@@ -400,7 +413,6 @@ def compute_required_area_SG(inputs):
         secondary_H = secondary_H + Q_step / secondary_mdot_channel
         primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
         primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
-        print("Subcooled", primary_T, secondary_H)
 
     # At this point, the evaporator section will be modeled. Each step of the evaporator
     # section before critical heat flux must be solved iteratively as heat transfer coefficients
@@ -435,7 +447,6 @@ def compute_required_area_SG(inputs):
         if x_e > 0:
             CHF = ((.008 / D_h) ** 0.5) * interpolate_CHF(G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
             DNB = Q_step / hx_area > CHF
-        print("Boiling", primary_T, secondary_H)
 
     # At this point water has reached the superheated vapor state and boiling is no longer occurring
     # Iterate through the superheated region until right before the end of the heat exchanger
@@ -463,7 +474,6 @@ def compute_required_area_SG(inputs):
         x_e = (secondary_H - fluid_sat) / H_fg
         primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
         primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
-        print("Superheated", primary_T, secondary_H)
 
     num_channels = int(np.ceil(Q / Q_channel))
     primary_mdot = num_channels * primary_mdot_channel
