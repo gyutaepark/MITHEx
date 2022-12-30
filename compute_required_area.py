@@ -316,7 +316,9 @@ def compute_required_area_SG(inputs):
                 x_e = (secondary_H - fluid_sat) / H_fg
                 primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
                 primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
-                if x_e > 0:
+                if x_e > 1:
+                    DNB = True
+                elif x_e > 0:
                     CHF = ((.008 / D_h) ** 0.5) * interpolate_CHF(G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
                     DNB = Q_step / hx_area > CHF
 
@@ -444,7 +446,9 @@ def compute_required_area_SG(inputs):
         x_e = (secondary_H - fluid_sat) / H_fg
         primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
         primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
-        if x_e > 0:
+        if x_e > 1:
+            DNB = True
+        elif x_e > 0:
             CHF = ((.008 / D_h) ** 0.5) * interpolate_CHF(G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
             DNB = Q_step / hx_area > CHF
 
@@ -638,8 +642,8 @@ def _compute_nucleate_boiling_step(D_h, A, A_flow, L, primary_fluid, primary_T, 
         f_lo = compute_friction_factor(Re_lo)
 
         v_go = secondary_mdot / (rho_l * A_flow)
-        Re_go = rho_l * v_lo * D_h / mu_l
-        f_go = compute_friction_factor(Re_lo)
+        Re_go = rho_l * v_go * D_h / mu_l
+        f_go = compute_friction_factor(Re_go)
 
         rho_m = (x / rho_g + (1 - x) / rho_l)
 

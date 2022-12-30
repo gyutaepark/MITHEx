@@ -139,7 +139,7 @@ def compute_friction_factor(Re):
     if Re < 3000:
         f = 64/Re
     else:
-        f = (0.79 * np.log(Re) - 1.64) ** -2
+        f = 0.316 * Re ** -0.25
     return f
 
 def compute_two_phase_friction_multiplier(x, G, D_h, sigma, rho_l, rho_g, rho_m, mu_l, mu_g, f_lo, f_vo):
