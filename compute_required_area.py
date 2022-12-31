@@ -10,7 +10,6 @@ from th_functions import fluid_properties, saturated_liquid_properties, saturate
 def compute_required_area(inputs):
     # initialize thermal inputs
     Q = Q_(inputs["Thermal Power (MW)"], 'MW').m_as('W')
-    L = inputs["Flow Length (m)"]
     primary_fluid = inputs["Primary Fluid"]
     primary_hot = Q_(inputs["Primary Hot Temperature (C)"], 'degC').m_as('K')
     primary_cold = Q_(inputs["Primary Cold Temperature (C)"], 'degC').m_as('K')
@@ -65,11 +64,90 @@ def compute_required_area(inputs):
     else:
         raise ValueError("Given plate material of {} is not currently supported.".format(plate_material))
 
+    def determine_HX_length(L, searching=True):
+        # Determine flow velocities by finding the limiting pressure drop
+        # Both fluids should have an equal fraction of mass flow rate in each channel
+        primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
+        primary_mdot_channel = primary_rho * primary_velocity * flow_area
+        if secondary_fluid == "Air":
+            rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
+            rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
+        else:
+            rho_1 = None
+            rho_2 = None
+        secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP, rho_1, rho_2))
+        secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
+
+        primary_mdot_ratio = primary_mdot_channel / primary_mdot
+        secondary_mdot_ratio = primary_mdot_channel / primary_mdot
+
+        if primary_mdot_ratio < secondary_mdot_ratio:
+            secondary_mdot_channel = secondary_mdot * primary_mdot_ratio
+            secondary_velocity = secondary_mdot_channel / (flow_area * secondary_rho)
+        else:
+            primary_mdot_channel = primary_mdot * secondary_mdot_ratio
+            primary_velocity = primary_mdot_channel / (flow_area * primary_rho)
+
+        # Calculate heat transfer coefficients
+        primary_Re = primary_rho * primary_velocity * D_h / primary_mu
+        primary_Pr = primary_mu * primary_cp / primary_k
+        if primary_fluid == "Sodium":
+            primary_Pe = primary_Re * primary_Pr
+            primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
+        primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+        primary_h = primary_Nu * primary_k / D_h
+
+        print(primary_h)
+
+        secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
+        secondary_Pr = secondary_mu * secondary_cp / secondary_k
+        secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
+        secondary_h = secondary_Nu * secondary_k / D_h
+
+        print(secondary_h)
+
+        # Calculate overall heat transfer coefficient
+        U = (primary_h ** -1 + plate_thickness * plate_k ** -1 + secondary_h ** -1) ** -1
+
+        print(U)
+
+        # LMTD METHOD
+        # Calculate LMTD
+        deltaT_1 = primary_hot - secondary_hot
+        deltaT_2 = primary_cold - secondary_cold
+        LMTD = (deltaT_1 - deltaT_2) / np.log(deltaT_1 / deltaT_2)
+
+        print(LMTD)
+
+        # Calculate required area for a single channel
+        Q_single_channel = primary_mdot_channel * primary_cp * (primary_hot - primary_cold)
+        A_required = Q_single_channel / (U * LMTD)
+        L_calculated = A_required / D
+
+        if not searching:
+            return Q_single_channel
+
+        print(L, L_calculated)
+
+        return L - L_calculated
+
+    # Initialize bounds of heat exchanger length solver
+    L_lower_bound = inputs["HX length lower bound (m)"]
+    L_upper_bound = inputs["HX length upper bound (m)"]
+
+    HX_L = scipy.optimize.brentq(determine_HX_length, L_lower_bound, L_upper_bound)
+    
     # Determine flow velocities by finding the limiting pressure drop
     # Both fluids should have an equal fraction of mass flow rate in each channel
-    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
+    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, HX_L, primary_deltaP))
     primary_mdot_channel = primary_rho * primary_velocity * flow_area
-    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
+    if secondary_fluid == "Air":
+        rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
+        rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
+    else:
+        rho_1 = None
+        rho_2 = None
+    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, HX_L, secondary_deltaP, rho_1, rho_2))
     secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
     primary_mdot_ratio = primary_mdot_channel / primary_mdot
@@ -105,31 +183,13 @@ def compute_required_area(inputs):
     deltaT_2 = primary_cold - secondary_cold
     LMTD = (deltaT_1 - deltaT_2) / np.log(deltaT_1 / deltaT_2)
 
-    # Gather results
-    UA_LMTD = Q / LMTD
-    A_LMTD = (UA_LMTD / U)
+    # Calculate heat exchange area for a single channel
+    A = D * HX_L
 
-    # E-NTU METHOD
-    # Calculate efficiency
-    C_hot = primary_cp * primary_mdot
-    C_cold = secondary_cp * secondary_mdot
-    C_min = np.minimum(C_hot, C_cold)
-    C_max = np.maximum(C_hot, C_cold)
-    C_r = C_min / C_max
+    Q_single_channel = U * A * LMTD
 
-    q_max = C_min * (primary_hot - secondary_cold)
-    e = Q / q_max
+    num_channels = Q / Q_single_channel
 
-    # Use efficiency to calculate NTU
-    if C_r == 1:
-        NTU = compute_NTU_counterflow(e)
-    else:
-        NTU = compute_NTU_counterflow(e, C_r)
-
-    # Gather results
-    UA_ENTU = NTU * C_min
-    A_ENTU = UA_ENTU / U
-    
     # Store results to be displayed
     results = {}
     results["Primary Velocity (m/s)"] = primary_velocity
@@ -144,18 +204,22 @@ def compute_required_area(inputs):
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Overall htc"] = U
-    results["NTU"] = NTU
-    results["UA LMTD method"] = UA_LMTD
-    results["UA e-NTU method"] = UA_ENTU
-    results["Heat transfer area LMTD method"] = A_LMTD
-    results["Heat transfer area e-NTU method"] = A_ENTU
+    results["Number of Channels"] = num_channels
+    results["Heat Exchanger Length (m)"] = HX_L
 
     return results
 
-def _compute_velocity(v, rho, D, mu, L, deltaP):
+def _compute_velocity(v, rho, D, mu, L, deltaP, rho_1=None, rho_2=None):
     Re = rho * v * D / mu
     f = compute_friction_factor(Re)
     dP = 0.5 * f * rho * v ** 2 * L / D
+
+    if rho_1 is not None:
+        v_1 = rho * v / rho_1
+        v_2 = rho * v / rho_2
+        dP_acc = rho_2 * v_2 ** 2 - rho * v ** 2
+        dP += dP_acc
+
     return (deltaP - dP)
 
 def fill_out_parameters(Q, c_p, T_hot=None, T_cold=None, m_dot=None):
@@ -490,7 +554,7 @@ def compute_required_area_SG(inputs):
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Secondary Pressure Drop (kPa)"] = dP / 1000
     results["Number of Channels"] = num_channels
-    results["Heat Exchanger Length"] = HX_length
+    results["Heat Exchanger Length (m)"] = HX_length
 
     return results
 
