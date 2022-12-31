@@ -67,9 +67,9 @@ def compute_required_area(inputs):
 
     # Determine flow velocities by finding the limiting pressure drop
     # Both fluids should have an equal fraction of mass flow rate in each channel
-    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
+    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
     primary_mdot_channel = primary_rho * primary_velocity * flow_area
-    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 20., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
+    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
     secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
     primary_mdot_ratio = primary_mdot_channel / primary_mdot
