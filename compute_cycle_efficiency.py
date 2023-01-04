@@ -32,7 +32,7 @@ def compute_cycle_efficiency(inputs):
 
     # Calculate the pump/compressor power
     P_1 = P_2 / compression_ratio
-    if secondary_fluid == "Water":
+    if secondary_fluid == "Water" or secondary_fluid == "CarbonDioxide":
         # Approximate the fluid density with state 2
         rho = PropsSI("D", "T", T_2, "P", P_2, secondary_fluid)
         Q_pump = (secondary_mdot * (P_2 - P_1) / rho) / e_pump
@@ -40,14 +40,13 @@ def compute_cycle_efficiency(inputs):
         C_v = PropsSI("O", "T", T_2, "P", P_2, secondary_fluid)
         C_p = PropsSI("C", "T", T_2, "P", P_2, secondary_fluid)
         gamma = C_p / C_v
-        T_1 = T_2 / (compression_ratio ** ((gamma - 1) / (e_pump * gamma)))
-        print(T_1)
+        T_1 = T_2 / (compression_ratio ** ((gamma - 1) / (gamma)))
         h_1 = PropsSI("H", "T", T_1, "P", P_1, secondary_fluid)
         Q_pump = secondary_mdot * (h_2 - h_1) / e_pump
 
     # State 4 is immediately after exiting the turbine
     P_4 = P_1
-    if secondary_fluid == "Water":
+    if secondary_fluid == "Water" or secondary_fluid == "CarbonDioxide":
         h_4r = PropsSI("H", "S", s_3, "P", P_1, secondary_fluid)
         dH_3_4 = e_turbine * (h_3 - h_4r)
         Q_turbine = secondary_mdot * dH_3_4
@@ -55,7 +54,7 @@ def compute_cycle_efficiency(inputs):
         C_v = PropsSI("O", "T", T_3, "P", P_3, secondary_fluid)
         C_p = PropsSI("C", "T", T_3, "P", P_3, secondary_fluid)
         gamma = C_p / C_v
-        T_4 = T_3 / (compression_ratio ** ((gamma - 1) * e_turbine / gamma))
+        T_4 = T_3 / (compression_ratio ** ((gamma - 1) / gamma))
         h_4 = PropsSI("H", "T", T_4, "P", P_4, secondary_fluid)
         Q_turbine = secondary_mdot * (h_3 - h_4) * e_turbine
 

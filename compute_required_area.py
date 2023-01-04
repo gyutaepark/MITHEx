@@ -5,7 +5,7 @@ import scipy.optimize
 from CoolProp.CoolProp import PropsSI
 from th_functions import fluid_properties, saturated_liquid_properties, saturated_vapor_properties, compute_Nu_Dittus_Boelter, \
     compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, compute_friction_factor, \
-    compute_equilibrium_quality, compute_flow_quality, compute_Nu_Groeneveld, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier
+    compute_equilibrium_quality, compute_flow_quality, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier, compute_pressure_drop
 
 def compute_required_area(inputs):
     # initialize thermal inputs
@@ -97,27 +97,19 @@ def compute_required_area(inputs):
         primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
         primary_h = primary_Nu * primary_k / D_h
 
-        print(primary_h)
-
         secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
         secondary_Pr = secondary_mu * secondary_cp / secondary_k
         secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
         secondary_h = secondary_Nu * secondary_k / D_h
 
-        print(secondary_h)
-
         # Calculate overall heat transfer coefficient
         U = (primary_h ** -1 + plate_thickness * plate_k ** -1 + secondary_h ** -1) ** -1
-
-        print(U)
 
         # LMTD METHOD
         # Calculate LMTD
         deltaT_1 = primary_hot - secondary_hot
         deltaT_2 = primary_cold - secondary_cold
         LMTD = (deltaT_1 - deltaT_2) / np.log(deltaT_1 / deltaT_2)
-
-        print(LMTD)
 
         # Calculate required area for a single channel
         Q_single_channel = primary_mdot_channel * primary_cp * (primary_hot - primary_cold)
@@ -126,8 +118,6 @@ def compute_required_area(inputs):
 
         if not searching:
             return Q_single_channel
-
-        print(L, L_calculated)
 
         return L - L_calculated
 
@@ -151,14 +141,16 @@ def compute_required_area(inputs):
     secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
     primary_mdot_ratio = primary_mdot_channel / primary_mdot
-    secondary_mdot_ratio = primary_mdot_channel / primary_mdot
+    secondary_mdot_ratio = secondary_mdot_channel / secondary_mdot
 
     if primary_mdot_ratio < secondary_mdot_ratio:
         secondary_mdot_channel = secondary_mdot * primary_mdot_ratio
         secondary_velocity = secondary_mdot_channel / (flow_area * secondary_rho)
+        print("Primary maxed out")
     else:
         primary_mdot_channel = primary_mdot * secondary_mdot_ratio
         primary_velocity = primary_mdot_channel / (flow_area * primary_rho)
+        print("Secondary maxed out")
 
     # Calculate heat transfer coefficients
     primary_Re = primary_rho * primary_velocity * D_h / primary_mu
@@ -190,6 +182,24 @@ def compute_required_area(inputs):
 
     num_channels = Q / Q_single_channel
 
+    # Calculate pressure drop for each fluid
+    primary_dP = compute_pressure_drop(
+        primary_velocity,
+        primary_rho,
+        D_h,
+        primary_mu,
+        HX_L,
+        )
+    secondary_dP = compute_pressure_drop(
+        secondary_velocity,
+        secondary_rho,
+        D_h,
+        secondary_mu,
+        HX_L,
+        rho_1,
+        rho_2
+    )
+
     # Store results to be displayed
     results = {}
     results["Primary Velocity (m/s)"] = primary_velocity
@@ -197,12 +207,14 @@ def compute_required_area(inputs):
     results["Primary Nu"] = primary_Nu
     results["Primary htc (W/m2)"] = primary_h
     results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
+    results["Primary Pressure Drop (Pa)"] = primary_dP
     results["Secondary Velocity"] = secondary_velocity
     results["Secondary Re"] = secondary_Re
     results["Secondary Nu"] = secondary_Nu
     results["Secondary htc (W/m2)"] = secondary_h
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
+    results["Secondary Pressure Drop (Pa)"] = secondary_dP
     results["Overall htc"] = U
     results["Number of Channels"] = num_channels
     results["Heat Exchanger Length (m)"] = HX_L

@@ -142,6 +142,19 @@ def compute_friction_factor(Re):
         f = 0.316 * Re ** -0.25
     return f
 
+def compute_pressure_drop(v, rho, D, mu, L, rho_1=None, rho_2=None):
+    Re = rho * v * D / mu
+    f = compute_friction_factor(Re)
+    dP = 0.5 * f * rho * v ** 2 * L / D
+
+    if rho_1 is not None:
+        v_1 = rho * v / rho_1
+        v_2 = rho * v / rho_2
+        dP_acc = rho_2 * v_2 ** 2 - rho * v ** 2
+        dP += dP_acc
+
+    return dP
+
 def compute_two_phase_friction_multiplier(x, G, D_h, sigma, rho_l, rho_g, rho_m, mu_l, mu_g, f_lo, f_vo):
     """ Calculates the two phase friction factor multiplier based on the
         Friedel correlation
