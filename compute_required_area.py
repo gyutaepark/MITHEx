@@ -3,7 +3,7 @@ import numpy as np
 import sdf
 import scipy.optimize
 from CoolProp.CoolProp import PropsSI
-from th_functions import fluid_properties, saturated_liquid_properties, saturated_vapor_properties, compute_Nu_Dittus_Boelter, \
+from th_functions import fluid_properties, saturated_liquid_properties, saturated_vapor_properties, compute_Nu_Dittus_Boelter, compute_Nu_Gnielinski, \
     compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, compute_friction_factor, \
     compute_equilibrium_quality, compute_flow_quality, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier, compute_pressure_drop
 
@@ -67,15 +67,15 @@ def compute_required_area(inputs):
     def determine_HX_length(L, searching=True):
         # Determine flow velocities by finding the limiting pressure drop
         # Both fluids should have an equal fraction of mass flow rate in each channel
-        primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
+        primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.01, 100000., args=(primary_rho, D_h, primary_mu, L, primary_deltaP))
         primary_mdot_channel = primary_rho * primary_velocity * flow_area
-        if secondary_fluid == "Air":
-            rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
-            rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
-        else:
-            rho_1 = None
-            rho_2 = None
-        secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP, rho_1, rho_2))
+        # if secondary_fluid == "Air":
+        #     rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
+        #     rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
+        # else:
+        #     rho_1 = None
+        #     rho_2 = None
+        secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.01, 400., args=(secondary_rho, D_h, secondary_mu, L, secondary_deltaP))
         secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
         primary_mdot_ratio = primary_mdot_channel / primary_mdot
@@ -94,12 +94,22 @@ def compute_required_area(inputs):
         if primary_fluid == "Sodium":
             primary_Pe = primary_Re * primary_Pr
             primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
-        primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+        else:
+            primary_f = compute_friction_factor(primary_Re)
+            if primary_Re > 2300:
+                primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+            else:
+                primary_Nu = 4.036
+
         primary_h = primary_Nu * primary_k / D_h
 
         secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
         secondary_Pr = secondary_mu * secondary_cp / secondary_k
-        secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
+        secondary_f = compute_friction_factor(secondary_Re)
+        if secondary_Re > 2300:
+            secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+        else:
+            secondary_Nu = 4.036
         secondary_h = secondary_Nu * secondary_k / D_h
 
         # Calculate overall heat transfer coefficient
@@ -129,15 +139,15 @@ def compute_required_area(inputs):
     
     # Determine flow velocities by finding the limiting pressure drop
     # Both fluids should have an equal fraction of mass flow rate in each channel
-    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(primary_rho, D_h, primary_mu, HX_L, primary_deltaP))
+    primary_velocity = scipy.optimize.brentq(_compute_velocity, 0.01, 200., args=(primary_rho, D_h, primary_mu, HX_L, primary_deltaP))
     primary_mdot_channel = primary_rho * primary_velocity * flow_area
-    if secondary_fluid == "Air":
-        rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
-        rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
-    else:
-        rho_1 = None
-        rho_2 = None
-    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.0001, 200., args=(secondary_rho, D_h, secondary_mu, HX_L, secondary_deltaP, rho_1, rho_2))
+    # if secondary_fluid == "Air":
+    #     rho_1 = PropsSI("D", "T", secondary_cold, "P", secondary_P, secondary_fluid)
+    #     rho_2 = PropsSI("D", "T", secondary_hot, "P", secondary_P, secondary_fluid)
+    # else:
+    #     rho_1 = None
+    #     rho_2 = None
+    secondary_velocity = scipy.optimize.brentq(_compute_velocity, 0.01, 200., args=(secondary_rho, D_h, secondary_mu, HX_L, secondary_deltaP))
     secondary_mdot_channel = secondary_rho * secondary_velocity * flow_area
 
     primary_mdot_ratio = primary_mdot_channel / primary_mdot
@@ -146,11 +156,9 @@ def compute_required_area(inputs):
     if primary_mdot_ratio < secondary_mdot_ratio:
         secondary_mdot_channel = secondary_mdot * primary_mdot_ratio
         secondary_velocity = secondary_mdot_channel / (flow_area * secondary_rho)
-        print("Primary maxed out")
     else:
         primary_mdot_channel = primary_mdot * secondary_mdot_ratio
         primary_velocity = primary_mdot_channel / (flow_area * primary_rho)
-        print("Secondary maxed out")
 
     # Calculate heat transfer coefficients
     primary_Re = primary_rho * primary_velocity * D_h / primary_mu
@@ -158,12 +166,21 @@ def compute_required_area(inputs):
     if primary_fluid == "Sodium":
         primary_Pe = primary_Re * primary_Pr
         primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
-    primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+    else:
+        primary_f = compute_friction_factor(primary_Re)
+        if primary_Re > 2300:
+            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+        else:
+            primary_Nu = 4.036
     primary_h = primary_Nu * primary_k / D_h
 
     secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
     secondary_Pr = secondary_mu * secondary_cp / secondary_k
-    secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
+    secondary_f = compute_friction_factor(secondary_Re)
+    if secondary_Re > 2300:
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+    else:
+        secondary_Nu = 4.036
     secondary_h = secondary_Nu * secondary_k / D_h
 
     # Calculate overall heat transfer coefficient
@@ -196,9 +213,10 @@ def compute_required_area(inputs):
         D_h,
         secondary_mu,
         HX_L,
-        rho_1,
-        rho_2
     )
+
+    primary_mass_flux = primary_mdot_channel / flow_area
+    secondary_mass_flux = secondary_mdot_channel / flow_area
 
     # Store results to be displayed
     results = {}
@@ -207,12 +225,14 @@ def compute_required_area(inputs):
     results["Primary Nu"] = primary_Nu
     results["Primary htc (W/m2)"] = primary_h
     results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
+    results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
     results["Primary Pressure Drop (Pa)"] = primary_dP
     results["Secondary Velocity"] = secondary_velocity
     results["Secondary Re"] = secondary_Re
     results["Secondary Nu"] = secondary_Nu
     results["Secondary htc (W/m2)"] = secondary_h
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
+    results["Secondary Mass Flux (kg/m2/s)"] = secondary_mass_flux
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Secondary Pressure Drop (Pa)"] = secondary_dP
     results["Overall htc"] = U
@@ -248,7 +268,7 @@ def fill_out_parameters(Q, c_p, T_hot=None, T_cold=None, m_dot=None):
         return Q / (c_p * (T_hot - T_cold))
     raise KeyError("Too many inputs. Two optional inputs are required.")
 
-def compute_required_area_SG(inputs):
+def compute_required_area_SG(inputs, verbose=True):
     np.seterr(all='raise')
     Q = Q_(inputs["Thermal Power (MW)"], 'MW').m_as('W')
     primary_fluid = inputs["Primary Fluid"]
@@ -299,36 +319,48 @@ def compute_required_area_SG(inputs):
     primary_dT = primary_hot - primary_cold
     primary_avg_T = (primary_hot + primary_cold) / 2
     primary_avg_cp, _, primary_avg_rho, primary_avg_mu = fluid_properties(primary_fluid, primary_avg_T, primary_P)
+    primary_mdot_total = Q / (primary_avg_cp * primary_dT)
     
     secondary_H_inlet = PropsSI('H', 'P', secondary_P, 'T', secondary_cold, "Water")
     secondary_H_outlet = PropsSI('H', 'P', secondary_P, 'T', secondary_hot, "Water")
     secondary_dH = secondary_H_outlet - secondary_H_inlet
+    secondary_mdot_total = Q / secondary_dH
 
     def find_HX_length(HX_L, searching=True):
-        print("starting HX length iteration with channel length {} m".format(HX_L))
+        if verbose:
+            print("starting HX length iteration with channel length {} m".format(HX_L))
         # Set bounds for primary velocity based on Reynolds number, if the maximum velocity has a lower
         # pressure drop than specified, use the maximum velocity
         if primary_fluid in ["Sodium", "Organic"]:
-            Re_low = 10.
+            Re_low = 1000.
             Re_high = 20000.
         else:
-            Re_low = 1000.
+            Re_low = 100.
             Re_high = 100000.
         v_low = Re_low * primary_avg_mu / (primary_avg_rho * D_h)
         v_high = Re_high * primary_avg_mu / (primary_avg_rho * D_h)
+
+        fluid_sat = PropsSI('H', 'P', secondary_P, 'Q', 0, "Water")
+        vapor_sat = PropsSI('H', 'P', secondary_P, 'Q', 1, "Water")
+        H_fg = vapor_sat - fluid_sat
+
         try:
             primary_velocity = scipy.optimize.brentq(_compute_velocity, v_low, v_high, args=(primary_avg_rho, D_h, primary_avg_mu, HX_L, primary_deltaP))
         except:
-            primary_velocity = v_high
+            dP_max = compute_pressure_drop(v_high, primary_avg_rho, D_h, primary_avg_mu, HX_L)
+            if dP_max < primary_deltaP * 0.95:
+                primary_velocity = v_high
+            else:
+                primary_velocity = v_low
         primary_mdot_channel = primary_velocity * primary_avg_rho * flow_area
-        print("Primary velocity: {}, Primary mass flow rate: {}".format(primary_velocity, primary_mdot_channel))
 
         fluid_sat = PropsSI('H', 'P', secondary_P, 'Q', 0, "Water")
         vapor_sat = PropsSI('H', 'P', secondary_P, 'Q', 1, "Water")
         H_fg = vapor_sat - fluid_sat
 
         def compute_single_channel(secondary_mdot_channel, searching=True):
-            print("Starting single channel iteration with mass flow rates \nSecondary: {} kg/s\nPrimary: {} kg/s".format(secondary_mdot_channel, primary_mdot_channel))
+            if verbose:
+                print("Starting single channel iteration with mass flow rates \nSecondary: {} kg/s\nPrimary: {} kg/s".format(secondary_mdot_channel, primary_mdot_channel))
             loc = 0
             dP = 0
             primary_T = primary_cold
@@ -354,6 +386,8 @@ def compute_required_area_SG(inputs):
                     plate_material,
                     plate_thickness
                 )
+                if boiling:
+                    continue
                 dP += dP_step
                 loc += step_size
                 secondary_H = secondary_H + Q_step / secondary_mdot_channel
@@ -423,6 +457,7 @@ def compute_required_area_SG(inputs):
                 x_e = (secondary_H - fluid_sat) / H_fg
                 primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
                 primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
+                secondary_T = PropsSI("T", "H", secondary_H, "P", secondary_P, "Water")
 
             if searching:
                 return dP - secondary_deltaP
@@ -431,7 +466,7 @@ def compute_required_area_SG(inputs):
 
         # Set bounds for the steam side mass flow rate and iterate to find the maximum mass flow rate before exceeding pressure drop
         _, _, _, mu = fluid_properties("Water", secondary_cold, secondary_P)
-        Re_low = 1000
+        Re_low = 200
         m_dot_low = 0.25 * Re_low * np.pi * D_h * mu
 
         Q_primary = primary_mdot_channel * primary_avg_cp * primary_dT
@@ -441,14 +476,17 @@ def compute_required_area_SG(inputs):
         except ValueError:
             secondary_mdot_channel = m_dot_high
 
-        Q_secondary = secondary_mdot_channel * secondary_dH
+        primary_mdot_ratio = primary_mdot_channel / primary_mdot_total
+        secondary_mdot_ratio = primary_mdot_channel / primary_mdot_total
 
-        if Q_primary > Q_secondary:
-            # Secondary side pressure drop is limiting, reduce the primary mass flow rate to match
-            primary_mdot_channel = Q_secondary / (primary_avg_cp * primary_dT)
+        if primary_mdot_ratio < secondary_mdot_ratio:
+            secondary_mdot_channel = secondary_mdot_total * primary_mdot_ratio
+        else:
+            primary_mdot_channel = primary_mdot_total * secondary_mdot_ratio
 
         outlet_enthalpy = compute_single_channel(secondary_mdot_channel, searching=False)
-        print("Iteration error:", outlet_enthalpy / secondary_H_outlet)
+        if verbose:
+            print("Iteration error:", outlet_enthalpy / secondary_H_outlet)
         if searching:
             return outlet_enthalpy - secondary_H_outlet
         else:
@@ -467,6 +505,14 @@ def compute_required_area_SG(inputs):
     secondary_H = secondary_H_inlet
     secondary_G = secondary_mdot_channel / flow_area
     
+    _, _, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_T, primary_P)
+    primary_velocity = primary_mdot_channel / (primary_rho * flow_area)
+    primary_inlet_Re = primary_rho * primary_velocity * D_h / primary_mu
+
+    _, _, secondary_rho, secondary_mu = fluid_properties('Water', secondary_cold, secondary_P)
+    secondary_velocity = secondary_mdot_channel / (secondary_rho * flow_area)
+    secondary_inlet_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
+
     x_e_departure = None
     boiling = False
     while not boiling and loc < HX_length:
@@ -485,6 +531,8 @@ def compute_required_area_SG(inputs):
             plate_material,
             plate_thickness
         )
+        if boiling:
+            continue
         dP += dP_step
         Q_channel += Q_step
         loc += step_size
@@ -555,15 +603,32 @@ def compute_required_area_SG(inputs):
         primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
         primary_T = primary_T + Q_step / (primary_mdot_channel * primary_cp)
 
+    primary_avg_velocity = primary_mdot_channel / (primary_avg_rho * flow_area)
+    primary_dP = compute_pressure_drop(
+        primary_avg_velocity,
+        primary_avg_rho,
+        D_h,
+        primary_avg_mu,
+        HX_length,
+    )
+
     num_channels = int(np.ceil(Q / Q_channel))
     primary_mdot = num_channels * primary_mdot_channel
     secondary_mdot = num_channels * secondary_mdot_channel
 
+    primary_mass_flux = primary_mdot_channel / flow_area
+    secondary_mass_flux = secondary_mdot_channel / flow_area
+
     results = {}
     results["Primary Channel Mass Flow Rate (kg/s)"] = primary_mdot_channel
+    results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
     results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
+    results["Primary inlet Re"] = primary_inlet_Re
+    results["Primary Pressure Drop (kPa)"] = primary_dP / 1000
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
+    results["Secondary Mass Flux (kg/m2/s)"] = secondary_mass_flux
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
+    results["Secondary inlet Re"] = secondary_inlet_Re
     results["Secondary Pressure Drop (kPa)"] = dP / 1000
     results["Number of Channels"] = num_channels
     results["Heat Exchanger Length (m)"] = HX_length
@@ -582,7 +647,11 @@ def _compute_subcooled_step(D_h, A, A_flow, L, primary_fluid, primary_T, primary
         primary_Pe = primary_Re * primary_Pr
         primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
     else:
-        primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+        primary_f = compute_friction_factor(primary_Re)
+        if primary_Re > 2300:
+            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+        else:
+            primary_Nu = 4.036
     primary_htc = primary_Nu * primary_k / D_h
     primary_R = (primary_htc * A) ** -1
 
@@ -594,6 +663,7 @@ def _compute_subcooled_step(D_h, A, A_flow, L, primary_fluid, primary_T, primary
         plate_k = compute_k_SS304(T_avg)
     elif plate_material == "SS316":
         plate_k = compute_k_SS316(T_avg)
+    plate_k = 16
     plate_R = plate_thickness / (plate_k * A)
 
     # Use a Dittus Boelter equation for single phase convection
@@ -601,8 +671,12 @@ def _compute_subcooled_step(D_h, A, A_flow, L, primary_fluid, primary_T, primary
     _, _, rho_g, _ = saturated_vapor_properties('Water', secondary_P)
     secondary_velocity = secondary_mdot / (secondary_rho * A_flow)
     secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
+    secondary_f = compute_friction_factor(secondary_Re)
     secondary_Pr = secondary_mu * secondary_cp / secondary_k
-    secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
+    if secondary_Re > 2300:
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+    else:
+        secondary_Nu = 4.036
     secondary_htc = secondary_Nu * secondary_k / D_h
     secondary_R = (secondary_htc * A) ** -1
 
@@ -622,8 +696,7 @@ def _compute_subcooled_step(D_h, A, A_flow, L, primary_fluid, primary_T, primary
     if (T_wall - T_sat) > criteria:
         boiling = True
 
-    f = compute_friction_factor(secondary_Re)
-    dP = 0.5 * f * secondary_rho * secondary_velocity ** 2 * L / D_h
+    dP = 0.5 * secondary_f * secondary_rho * secondary_velocity ** 2 * L / D_h
 
     return Q, dP, boiling
 
@@ -637,20 +710,29 @@ def _compute_nucleate_boiling_step(D_h, A, A_flow, L, primary_fluid, primary_T, 
         primary_Pe = primary_Re * primary_Pr
         primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
     else:
-        primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+        primary_f = compute_friction_factor(primary_Re)
+        if primary_Re > 2300:
+            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+        else:
+            primary_Nu = 4.036
     primary_htc = primary_Nu * primary_k / D_h
     primary_R = (primary_htc * A) ** -1
 
-    secondary_T = PropsSI('T', 'H', secondary_H, 'P', secondary_P, 'Water')
+    H_sat = PropsSI('H', 'P', secondary_P, 'Q', 0, 'Water')
     T_sat = PropsSI('T', 'P', secondary_P, 'Q', 0, 'Water')
+    if secondary_H < H_sat:
+        secondary_T = PropsSI('T', 'H', secondary_H, 'P', secondary_P, 'Water')
+    else:
+        secondary_T = PropsSI('T', 'P', secondary_P, 'Q', 0, 'Water')
 
     T_avg = (primary_T + secondary_T) / 2
     if plate_material == "SS304":
         plate_k = compute_k_SS304(T_avg)
     elif plate_material == "SS316":
         plate_k = compute_k_SS316(T_avg)
+    plate_k = 16
     plate_R = plate_thickness / (plate_k * A)
-    
+
     secondary_G = secondary_mdot / A_flow
     cp_l, k_l, rho_l, mu_l = saturated_liquid_properties('Water', secondary_P)
     _, _, rho_g, mu_g = saturated_vapor_properties('Water', secondary_P)
@@ -748,7 +830,11 @@ def _compute_superheated_step(D_h, A, A_flow, L, primary_fluid, primary_T, prima
         primary_Pe = primary_Re * primary_Pr
         primary_Nu = compute_Nu_Seban_Shimazaki(primary_Pe)
     else:
-        primary_Nu = compute_Nu_Dittus_Boelter(primary_Re, primary_Pr, heating=False)
+        primary_f = compute_friction_factor(primary_Re)
+        if primary_Re > 2300:
+            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+        else:
+            primary_Nu = 4.036
     primary_htc = primary_Nu * primary_k / D_h
     primary_R = (primary_htc * A) ** -1
 
@@ -770,8 +856,12 @@ def _compute_superheated_step(D_h, A, A_flow, L, primary_fluid, primary_T, prima
     _, _, rho_g, mu_g = saturated_vapor_properties('Water', secondary_P)
     secondary_velocity = secondary_mdot / (secondary_rho * A_flow)
     secondary_Re = secondary_rho * secondary_velocity * D_h / secondary_mu
+    secondary_f =  compute_friction_factor(secondary_Re)
     secondary_Pr = secondary_mu * secondary_cp / secondary_k
-    secondary_Nu = compute_Nu_Dittus_Boelter(secondary_Re, secondary_Pr, heating=True)
+    if secondary_Re > 2300:
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+    else:
+        secondary_Nu = 4.036
     secondary_htc = secondary_Nu * secondary_k / D_h
 
     # Compute flow resistances and heat transfer
@@ -781,8 +871,7 @@ def _compute_superheated_step(D_h, A, A_flow, L, primary_fluid, primary_T, prima
 
     # Compute pressure drop
     if secondary_H > H_g:
-        f = compute_friction_factor(secondary_Re)
-        dP = 0.5 * f * secondary_rho * secondary_velocity ** 2 * L / D_h
+        dP = 0.5 * secondary_f * secondary_rho * secondary_velocity ** 2 * L / D_h
     else:
         _, _, rho_l, mu_l = saturated_liquid_properties('Water', secondary_P)
         H_f = PropsSI('H', 'P', secondary_P, 'Q', 0, "Water")

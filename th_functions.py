@@ -23,6 +23,10 @@ def compute_htc_Dittus_Boelter(Re, Pr, k, D, heating=True):
         htc = (k * D ** -1) * 0.023 * Re ** 0.8 * Pr ** 0.3
     return htc
 
+def compute_Nu_Gnielinski(Re, Pr, f):
+    Nu = (f / 8) * (Re - 1000) * Pr / (1 + 12.7 * np.sqrt(f / 8) * (Pr ** (2/3) - 1))
+    return Nu
+
 def compute_Nu_Seban_Shimazaki(Pe):
     Nu = 5.0 + 0.025 * Pe ** 0.8
     return Nu
@@ -136,10 +140,10 @@ def compute_k_SS316(T):
     return k
 
 def compute_friction_factor(Re):
-    if Re < 3000:
+    if Re < 2300:
         f = 64/Re
     else:
-        f = 0.316 * Re ** -0.25
+        f = (1.82 * np.log10(Re) - 1.64) ** -2
     return f
 
 def compute_pressure_drop(v, rho, D, mu, L, rho_1=None, rho_2=None):
