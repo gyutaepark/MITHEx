@@ -2,7 +2,7 @@ from units import Q_
 import numpy as np
 from CoolProp.CoolProp import PropsSI
 from th_functions import fluid_properties
-from test import fill_out_parameters
+from compute_required_area import fill_out_parameters
 
 def compute_cycle_efficiency(inputs):
     secondary_fluid = inputs["Secondary Fluid"]
