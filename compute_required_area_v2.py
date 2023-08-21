@@ -4,7 +4,7 @@ import sdf
 import scipy.optimize
 from CoolProp.CoolProp import PropsSI
 from th_functions import fluid_properties, saturated_liquid_properties, saturated_vapor_properties, compute_Nu_Dittus_Boelter, compute_Nu_Gnielinski, \
-    compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, compute_friction_factor, \
+    compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, compute_friction_factor, \
     compute_equilibrium_quality, compute_flow_quality, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier, compute_pressure_drop
 
 def compute_required_area(inputs):
@@ -38,30 +38,42 @@ def compute_required_area(inputs):
     if np.isnan(primary_mdot):
         primary_avg_temperature = (primary_hot+primary_cold)/2
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_avg_temperature, primary_P)
-        primary_mdot = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, T_cold=primary_cold)
+        primary_mdot = fill_out_parameters(
+            Q, primary_cp, T_hot=primary_hot, T_cold=primary_cold)
     elif np.isnan(primary_hot):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_cold, primary_P)
-        primary_hot = fill_out_parameters(Q, primary_cp, T_cold=primary_cold, m_dot=primary_mdot)
+        primary_hot = fill_out_parameters(
+            Q, primary_cp, T_cold=primary_cold, m_dot=primary_mdot)
     elif np.isnan(primary_cold):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_hot, primary_P)
-        primary_cold = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, m_dot=primary_mdot)
+        primary_cold = fill_out_parameters(
+            Q, primary_cp, T_hot=primary_hot, m_dot=primary_mdot)
 
     # fill out missing thermal parameters
     if np.isnan(secondary_mdot):
         secondary_avg_temperature = (secondary_hot+secondary_cold)/2
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_avg_temperature, secondary_P)
-        secondary_mdot = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, T_cold=secondary_cold)
+        secondary_mdot = fill_out_parameters(
+            Q, secondary_cp, T_hot=secondary_hot, T_cold=secondary_cold)
     elif np.isnan(secondary_hot):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_cold, secondary_P)
-        secondary_hot = fill_out_parameters(Q, secondary_cp, T_cold=secondary_cold, m_dot=secondary_mdot)
+        secondary_hot = fill_out_parameters(
+            Q, secondary_cp, T_cold=secondary_cold, m_dot=secondary_mdot)
     elif np.isnan(secondary_cold):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_hot, secondary_P)
-        secondary_cold = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
+        secondary_cold = fill_out_parameters(
+            Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
 
     # Initialize geometry
-    plate_thickness = inputs["Plate thickness (m)"]
-    plate_material = inputs["Plate material"]
-    D = inputs["Channel Diameter (m)"]
+    plate_thickness = np.array([
+        inputs["HX1 Plate thickness (m)"],
+        inputs["HX2 Plate thickness (m)"],
+    ])
+    plate_material = np.array([
+        inputs["HX1 Plate material"],
+        inputs["HX2 Plate material"],
+    ])
+    D = inputs["HX Channel Diameter (m)"]
     flow_area = np.pi*D**2/8
     perimeter = D + np.pi*D/2
     D_h = 4*flow_area/perimeter
@@ -70,29 +82,36 @@ def compute_required_area(inputs):
     T1_avg = (primary_hot+primary_cold+intermediate_hot+intermediate_cold)/4
     T2_avg = (intermediate_hot+intermediate_cold+secondary_hot+secondary_cold)/4
 
-    if plate_material == "SS304":
-        plate_k1 = compute_k_SS304(T1_avg)
-        plate_k2 = compute_k_SS304(T2_avg)
-    elif plate_material == "SS316":
-        plate_k1 = compute_k_SS316(T1_avg)
-        plate_k2 = compute_k_SS316(T2_avg)
-    else:
-        raise ValueError("Given plate material of {} is not currently supported.".format(plate_material))
+    plate_k1 = compute_k_SS(T1_avg, plate_material[0])
+    plate_k2 = compute_k_SS(T2_avg, plate_material[1])
 
     def determine_HX_length(L, searching=True):
         # Determine flow velocities by finding the limiting pressure drop
         # Both fluids should have an equal fraction of mass flow rate in each channel
         L1, L2 = L
         primary_velocity = scipy.optimize.brentq(
-            _compute_velocity, 1e-3, 1e6, args=(primary_rho, D_h, primary_mu, L1, primary_deltaP))
+            _compute_velocity,
+            1e-3,
+            1e6,
+            args=(primary_rho, D_h, primary_mu, L1, primary_deltaP))
         primary_mdot_channel = primary_rho*primary_velocity*flow_area
 
         intermediate_velocity = scipy.optimize.brentq(
-            _compute_velocity, 1e-3, 1e6, args=(intermediate_rho, D_h, intermediate_mu, L2, intermediate_deltaP))
+            _compute_velocity,
+            1e-3,
+            1e6,
+            args=(intermediate_rho,
+                  D_h,
+                  intermediate_mu,
+                  L2,
+                  intermediate_deltaP))
         intermediate_mdot_channel = intermediate_rho*intermediate_velocity*flow_area
 
         secondary_velocity = scipy.optimize.brentq(
-            _compute_velocity, 1e-3, 1e6, args=(secondary_rho, D_h, secondary_mu, L2, secondary_deltaP))
+            _compute_velocity,
+            1e-3,
+            1e6,
+            args=(secondary_rho, D_h, secondary_mu, L2, secondary_deltaP))
         secondary_mdot_channel = secondary_rho*secondary_velocity*flow_area
 
         primary_mdot_ratio = primary_mdot_channel/primary_mdot
@@ -107,19 +126,23 @@ def compute_required_area(inputs):
         min_ratio = min(ratio_dict, key=ratio_dict.get)
         if min_ratio == 'primary_mdot_ratio':
             intermediate_mdot_channel = intermediate_mdot*primary_mdot_ratio
-            intermediate_velocity = intermediate_mdot_channel/(flow_area*intermediate_rho)
+            intermediate_velocity = intermediate_mdot_channel/(
+                flow_area*intermediate_rho)
             secondary_mdot_channel = secondary_mdot*primary_mdot_ratio
-            secondary_velocity = secondary_mdot_channel/(flow_area*secondary_rho)
+            secondary_velocity = secondary_mdot_channel/(
+                flow_area*secondary_rho)
         elif min_ratio == 'intermediate_mdot_ratio':
             primary_mdot_channel = primary_mdot*intermediate_mdot_ratio
             primary_velocity = primary_mdot_channel/(flow_area*primary_rho)
             secondary_mdot_channel = secondary_mdot*intermediate_mdot_ratio
-            secondary_velocity = secondary_mdot_channel/(flow_area*secondary_rho)
+            secondary_velocity = secondary_mdot_channel/(
+                flow_area*secondary_rho)
         else:
             primary_mdot_channel = primary_mdot*secondary_mdot_ratio
             primary_velocity = primary_mdot_channel/(flow_area*primary_rho)
             intermediate_mdot_channel = intermediate_mdot*secondary_mdot_ratio
-            intermediate_velocity = intermediate_mdot_channel/(flow_area*intermediate_rho)
+            intermediate_velocity = intermediate_mdot_channel/(
+                flow_area*intermediate_rho)
 
         # Calculate heat transfer coefficients
         primary_Re = primary_rho*primary_velocity*D_h/primary_mu
@@ -130,7 +153,9 @@ def compute_required_area(inputs):
         else:
             primary_f = compute_friction_factor(primary_Re)
             if primary_Re > 2300:
-                primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+                primary_Nu = compute_Nu_Gnielinski(primary_Re,
+                                                   primary_Pr,
+                                                   primary_f)
             else:
                 primary_Nu = 4.036
         primary_h = primary_Nu*primary_k/D_h
@@ -143,7 +168,9 @@ def compute_required_area(inputs):
         else:
             intermediate_f = compute_friction_factor(intermediate_Re)
             if intermediate_Re > 2300:
-                intermediate_Nu = compute_Nu_Gnielinski(intermediate_Re, intermediate_Pr, intermediate_f)
+                intermediate_Nu = compute_Nu_Gnielinski(intermediate_Re,
+                                                        intermediate_Pr,
+                                                        intermediate_f)
             else:
                 intermediate_Nu = 4.036
         intermediate_h = intermediate_Nu*intermediate_k/D_h
@@ -152,14 +179,18 @@ def compute_required_area(inputs):
         secondary_Pr = secondary_mu*secondary_cp/secondary_k
         secondary_f = compute_friction_factor(secondary_Re)
         if secondary_Re > 2300:
-            secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+            secondary_Nu = compute_Nu_Gnielinski(secondary_Re,
+                                                 secondary_Pr,
+                                                 secondary_f)
         else:
             secondary_Nu = 4.036
         secondary_h = secondary_Nu*secondary_k/D_h
 
         # Calculate overall heat transfer coefficient
-        U1 = (primary_h**-1 + plate_thickness*plate_k1**-1 + intermediate_h**-1)**-1
-        U2 = (intermediate_h**-1 + plate_thickness*plate_k2**-1 + secondary_h**-1)**-1
+        U1 = (primary_h**-1 + plate_thickness[0]*plate_k1**-1
+              + intermediate_h**-1)**-1
+        U2 = (intermediate_h**-1 + plate_thickness[1]*plate_k2**-1
+              + secondary_h**-1)**-1
 
         # LMTD METHOD
         # Calculate LMTD
@@ -172,11 +203,13 @@ def compute_required_area(inputs):
         LMTD2 = (deltaT_2h-deltaT_2c)/np.log(deltaT_2h/deltaT_2c)
 
         # Calculate required area for a single channel
-        Q_single_channel1 = primary_mdot_channel*primary_cp*(primary_hot-primary_cold)
+        Q_single_channel1 = primary_mdot_channel*primary_cp*(
+            primary_hot-primary_cold)
         A_required1 = Q_single_channel1/(U1*LMTD1)
         L_calculated1 = A_required1/D
 
-        Q_single_channel2 = intermediate_mdot_channel*intermediate_cp*(intermediate_hot-intermediate_cold)
+        Q_single_channel2 = intermediate_mdot_channel*intermediate_cp*(
+            intermediate_hot-intermediate_cold)
         A_required2 = Q_single_channel2/(U2*LMTD2)
         L_calculated2 = A_required2/D
 
@@ -189,20 +222,33 @@ def compute_required_area(inputs):
     L_lower_bound = inputs["HX length lower bound (m)"]
     L_upper_bound = inputs["HX length upper bound (m)"]
     res = scipy.optimize.root(determine_HX_length, [1, 1])
-    HX_L = res.x
+    HX_Ls = res.x
 
     # Determine flow velocities by finding the limiting pressure drop
     # Both fluids should have an equal fraction of mass flow rate in each channel
     primary_velocity = scipy.optimize.brentq(
-        _compute_velocity, 1e-3, 1e6, args=(primary_rho, D_h, primary_mu, HX_L[0], primary_deltaP))
+        _compute_velocity,
+        1e-3,
+        1e6,
+        args=(primary_rho, D_h, primary_mu, HX_Ls[0], primary_deltaP))
     primary_mdot_channel = primary_rho*primary_velocity*flow_area
 
     intermediate_velocity = scipy.optimize.brentq(
-        _compute_velocity, 1e-3, 1e6, args=(intermediate_rho, D_h, intermediate_mu, HX_L[1], intermediate_deltaP))
+        _compute_velocity,
+        1e-3,
+        1e6,
+        args=(intermediate_rho,
+              D_h,
+              intermediate_mu,
+              HX_Ls[1],
+              intermediate_deltaP))
     intermediate_mdot_channel = intermediate_rho*intermediate_velocity*flow_area
 
     secondary_velocity = scipy.optimize.brentq(
-        _compute_velocity, 1e-3, 1e6, args=(secondary_rho, D_h, secondary_mu, HX_L[1], secondary_deltaP))
+        _compute_velocity,
+        1e-3,
+        1e6,
+        args=(secondary_rho, D_h, secondary_mu, HX_Ls[1], secondary_deltaP))
     secondary_mdot_channel = secondary_rho*secondary_velocity*flow_area
 
     primary_mdot_ratio = primary_mdot_channel/primary_mdot
@@ -217,7 +263,8 @@ def compute_required_area(inputs):
     min_ratio = min(ratio_dict, key=ratio_dict.get)
     if min_ratio == 'primary_mdot_ratio':
         intermediate_mdot_channel = intermediate_mdot*primary_mdot_ratio
-        intermediate_velocity = intermediate_mdot_channel/(flow_area*intermediate_rho)
+        intermediate_velocity = intermediate_mdot_channel/(
+            flow_area*intermediate_rho)
         secondary_mdot_channel = secondary_mdot*primary_mdot_ratio
         secondary_velocity = secondary_mdot_channel/(flow_area*secondary_rho)
     elif min_ratio == 'intermediate_mdot_ratio':
@@ -229,7 +276,8 @@ def compute_required_area(inputs):
         primary_mdot_channel = primary_mdot*secondary_mdot_ratio
         primary_velocity = primary_mdot_channel/(flow_area*primary_rho)
         intermediate_mdot_channel = intermediate_mdot*secondary_mdot_ratio
-        intermediate_velocity = intermediate_mdot_channel/(flow_area*intermediate_rho)
+        intermediate_velocity = intermediate_mdot_channel/(
+            flow_area*intermediate_rho)
 
     # Calculate heat transfer coefficients
     primary_Re = primary_rho*primary_velocity*D_h/primary_mu
@@ -240,7 +288,9 @@ def compute_required_area(inputs):
     else:
         primary_f = compute_friction_factor(primary_Re)
         if primary_Re > 2300:
-            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+            primary_Nu = compute_Nu_Gnielinski(primary_Re,
+                                               primary_Pr,
+                                               primary_f)
         else:
             primary_Nu = 4.036
     primary_h = primary_Nu*primary_k/D_h
@@ -253,7 +303,9 @@ def compute_required_area(inputs):
     else:
         intermediate_f = compute_friction_factor(intermediate_Re)
         if intermediate_Re > 2300:
-            intermediate_Nu = compute_Nu_Gnielinski(intermediate_Re, intermediate_Pr, intermediate_f)
+            intermediate_Nu = compute_Nu_Gnielinski(intermediate_Re,
+                                                    intermediate_Pr,
+                                                    intermediate_f)
         else:
             intermediate_Nu = 4.036
     intermediate_h = intermediate_Nu*intermediate_k/D_h
@@ -262,14 +314,18 @@ def compute_required_area(inputs):
     secondary_Pr = secondary_mu*secondary_cp/secondary_k
     secondary_f = compute_friction_factor(secondary_Re)
     if secondary_Re > 2300:
-        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re,
+                                             secondary_Pr,
+                                             secondary_f)
     else:
         secondary_Nu = 4.036
     secondary_h = secondary_Nu*secondary_k/D_h
 
     # Calculate overall heat transfer coefficient
-    U1 = (primary_h**-1 + plate_thickness*plate_k1**-1 + intermediate_h**-1)**-1
-    U2 = (intermediate_h**-1 + plate_thickness*plate_k2**-1 + secondary_h**-1)**-1
+    U1 = (primary_h**-1 + plate_thickness[0]*plate_k1**-1
+          + intermediate_h**-1)**-1
+    U2 = (intermediate_h**-1 + plate_thickness[1]*plate_k2**-1
+          + secondary_h**-1)**-1
 
     # LMTD METHOD
     # Calculate LMTD
@@ -282,8 +338,8 @@ def compute_required_area(inputs):
     LMTD2 = (deltaT_2h-deltaT_2c)/np.log(deltaT_2h/deltaT_2c)
 
     # Calculate heat exchange area for a single channel
-    A1 = D*HX_L[0]
-    A2 = D*HX_L[1]
+    A1 = D*HX_Ls[0]
+    A2 = D*HX_Ls[1]
 
     Q_single_channel1 = U1*A1*LMTD1
     Q_single_channel2 = U2*A2*LMTD2
@@ -297,66 +353,79 @@ def compute_required_area(inputs):
         primary_rho,
         D_h,
         primary_mu,
-        HX_L[0],
+        HX_Ls[0],
     )
     intermediate_dP1 = compute_pressure_drop(
         intermediate_velocity,
         intermediate_rho,
         D_h,
         intermediate_mu,
-        HX_L[0],
+        HX_Ls[0],
     )
     intermediate_dP2 = compute_pressure_drop(
         intermediate_velocity,
         intermediate_rho,
         D_h,
         intermediate_mu,
-        HX_L[1],
+        HX_Ls[1],
     )
     secondary_dP = compute_pressure_drop(
         secondary_velocity,
         secondary_rho,
         D_h,
         secondary_mu,
-        HX_L[1],
+        HX_Ls[1],
     )
     primary_mass_flux = primary_mdot_channel/flow_area
     intermediate_mass_flux = intermediate_mdot_channel/flow_area
     secondary_mass_flux = secondary_mdot_channel/flow_area
 
-    Q_intpump = (intermediate_dP1
-                 +intermediate_dP2)*intermediate_mdot/intermediate_rho/inputs["Pump/Compressor Efficiency"]
+    Q_intpump = (
+        intermediate_dP1+intermediate_dP2
+    )*intermediate_mdot/intermediate_rho/inputs["Pump/Compressor Efficiency"]
+
+    channel_thicknesses = 3*plate_thickness + D
+    channel_widths = plate_thickness + D
+    channel_volumes = channel_thicknesses*channel_widths*HX_Ls
+    HX_volumes = channel_volumes*np.array([num_channels1, num_channels2])
+
     # Store results to be displayed
     results = {}
-    results["Primary Velocity (m/s)"] = primary_velocity
     results["Primary Re"] = primary_Re
     results["Primary Nu"] = primary_Nu
     results["Primary htc (W/m2)"] = primary_h
+    results["Primary Velocity (m/s)"] = primary_velocity
     results["Primary Channel Mass Flow Rate (kg/s)"] = primary_mdot_channel
     results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
     results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
     results["Primary Pressure Drop (Pa)"] = primary_dP
-    results["Intermediate Velocity (m/s)"] = intermediate_velocity
     results["Intermediate Re"] = intermediate_Re
     results["Intermediate Nu"] = intermediate_Nu
     results["Intermediate htc (W/m2)"] = intermediate_h
-    results["Intermediate Channel Mass Flow Rate (kg/s)"] = intermediate_mdot_channel
+    results["Intermediate Velocity (m/s)"] = intermediate_velocity
+    results[
+        "Intermediate Channel Mass Flow Rate (kg/s)"] = intermediate_mdot_channel
     results["Intermediate Mass Flow Rate (kg/s)"] = intermediate_mdot
     results["Intermediate Mass Flux (kg/m2/s)"] = intermediate_mass_flux
-    results["Intermediate Pressure Drop (Pa)"] = [intermediate_dP1, intermediate_dP2]
-    results["Intermediate Pump Work [MW]"] = Q_intpump/1e6
-    results["Secondary Velocity"] = secondary_velocity
+    results["Intermediate Pressure Drop 1 (Pa)"] = intermediate_dP1
+    results["Intermediate Pressure Drop 2 (Pa)"] = intermediate_dP2
+    # results["Intermediate Pump Work [MW]"] = Q_intpump/1e6
     results["Secondary Re"] = secondary_Re
     results["Secondary Nu"] = secondary_Nu
     results["Secondary htc (W/m2)"] = secondary_h
+    results["Secondary Velocity"] = secondary_velocity
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Secondary Mass Flux (kg/m2/s)"] = secondary_mass_flux
     results["Secondary Pressure Drop (Pa)"] = secondary_dP
-    results["Overall htc"] = [U1, U2]
-    results["Number of Channels"] = [num_channels1, num_channels2]
-    results["Heat Exchanger Length (m)"] = HX_L
-
+    results["Overall HTC 1 (W/m2/s)"] = U1
+    results["Overall HTC 2 (W/m2/s)"] = U2
+    results["HX1 Number of Channels"] = num_channels1
+    results["HX2 Number of Channels"] = num_channels2
+    results["HX1 Length (m)"] = HX_Ls[0]
+    results["HX2 Length (m)"] = HX_Ls[1]
+    results["HX1 Volume (m3)"] = HX_volumes[0]
+    results["HX2 Volume (m3)"] = HX_volumes[1]
     return results
 
 def _compute_velocity(v, rho, D, mu, L, deltaP, rho_1=None, rho_2=None):
@@ -394,20 +463,26 @@ def compute_required_area_SG(inputs, verbose=True):
     primary_cold = Q_(inputs["Primary Cold Temperature (C)"], 'degC').m_as('K')
     primary_P = Q_(inputs["Primary Pressure (kPa)"], 'kPa').m_as('Pa')
     primary_deltaP = Q_(inputs["Primary Pressure Drop (kPa)"], 'kPa').m_as('Pa')
-    secondary_hot = Q_(inputs["Secondary Hot Temperature (C)"], 'degC').m_as('K')
-    secondary_cold = Q_(inputs["Secondary Cold Temperature (C)"], 'degC').m_as('K')
+    secondary_hot = Q_(inputs["Secondary Hot Temperature (C)"],
+                       'degC').m_as('K')
+    secondary_cold = Q_(inputs["Secondary Cold Temperature (C)"],
+                        'degC').m_as('K')
     secondary_P = Q_(inputs["Secondary Pressure (kPa)"], 'kPa').m_as('Pa')
-    secondary_deltaP = Q_(inputs["Secondary Pressure Drop (kPa)"], 'kPa').m_as('Pa')
+    secondary_deltaP = Q_(inputs["Secondary Pressure Drop (kPa)"],
+                          'kPa').m_as('Pa')
 
     # Check that necessary parameters are included
     if primary_cold is None:
-        raise ValueError("Primary cold temperature must be included as an input")
+        raise ValueError(
+            "Primary cold temperature must be included as an input")
     elif secondary_cold is None:
-        raise ValueError("Secondary cold temperature must be included as an input")
+        raise ValueError(
+            "Secondary cold temperature must be included as an input")
     elif primary_hot is None:
         raise ValueError("Primary hot temperature must be included as an input")
     elif secondary_hot is None:
-        raise ValueError("Secondary hot temperature must be included as an input")
+        raise ValueError(
+            "Secondary hot temperature must be included as an input")
 
     # Initialize geometry
     plate_thickness = inputs["Plate thickness (m)"]
@@ -439,14 +514,26 @@ def compute_required_area_SG(inputs, verbose=True):
     primary_avg_cp, _, primary_avg_rho, primary_avg_mu = fluid_properties(primary_fluid, primary_avg_T, primary_P)
     primary_mdot_total = Q/(primary_avg_cp*primary_dT)
 
-    secondary_H_inlet = PropsSI('H', 'P', secondary_P, 'T', secondary_cold, "Water")
-    secondary_H_outlet = PropsSI('H', 'P', secondary_P, 'T', secondary_hot, "Water")
+    secondary_H_inlet = PropsSI('H',
+                                'P',
+                                secondary_P,
+                                'T',
+                                secondary_cold,
+                                "Water")
+    secondary_H_outlet = PropsSI('H',
+                                 'P',
+                                 secondary_P,
+                                 'T',
+                                 secondary_hot,
+                                 "Water")
     secondary_dH = secondary_H_outlet - secondary_H_inlet
     secondary_mdot_total = Q/secondary_dH
 
     def find_HX_length(HX_L, searching=True):
         if verbose:
-            print("starting HX length iteration with channel length {} m".format(HX_L))
+            print(
+                "starting HX length iteration with channel length {} m".format(
+                    HX_L))
         # Set bounds for primary velocity based on Reynolds number, if the maximum velocity has a lower
         # pressure drop than specified, use the maximum velocity
         if primary_fluid in ["Sodium", "Organic"]:
@@ -464,9 +551,20 @@ def compute_required_area_SG(inputs, verbose=True):
 
         try:
             primary_velocity = scipy.optimize.brentq(
-                _compute_velocity, v_low, v_high, args=(primary_avg_rho, D_h, primary_avg_mu, HX_L, primary_deltaP))
+                _compute_velocity,
+                v_low,
+                v_high,
+                args=(primary_avg_rho,
+                      D_h,
+                      primary_avg_mu,
+                      HX_L,
+                      primary_deltaP))
         except:
-            dP_max = compute_pressure_drop(v_high, primary_avg_rho, D_h, primary_avg_mu, HX_L)
+            dP_max = compute_pressure_drop(v_high,
+                                           primary_avg_rho,
+                                           D_h,
+                                           primary_avg_mu,
+                                           HX_L)
             if dP_max < primary_deltaP*0.95:
                 primary_velocity = v_high
             else:
@@ -479,8 +577,9 @@ def compute_required_area_SG(inputs, verbose=True):
 
         def compute_single_channel(secondary_mdot_channel, searching=True):
             if verbose:
-                print("Starting single channel iteration with mass flow rates \nSecondary: {} kg/s\nPrimary: {} kg/s"
-                      .format(secondary_mdot_channel, primary_mdot_channel))
+                print(
+                    "Starting single channel iteration with mass flow rates \nSecondary: {} kg/s\nPrimary: {} kg/s"
+                    .format(secondary_mdot_channel, primary_mdot_channel))
             loc = 0
             dP = 0
             primary_T = primary_cold
@@ -550,7 +649,13 @@ def compute_required_area_SG(inputs, verbose=True):
                     DNB = True
                 elif x_e > 0:
                     CHF = ((.008/D_h)**0.5)*interpolate_CHF(
-                        G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
+                        G_scale,
+                        secondary_G,
+                        x_scale,
+                        x_e,
+                        P_scale,
+                        secondary_P,
+                        q_crit)
                     DNB = Q_step/hx_area > CHF
 
             # At this point water has reached the superheated vapor state and boiling is no longer occurring
@@ -578,7 +683,12 @@ def compute_required_area_SG(inputs, verbose=True):
                 x_e = (secondary_H-fluid_sat)/H_fg
                 primary_cp, _, _, _ = fluid_properties(primary_fluid, primary_T, primary_P)
                 primary_T = primary_T + Q_step/(primary_mdot_channel*primary_cp)
-                secondary_T = PropsSI("T", "H", secondary_H, "P", secondary_P, "Water")
+                secondary_T = PropsSI("T",
+                                      "H",
+                                      secondary_H,
+                                      "P",
+                                      secondary_P,
+                                      "Water")
 
             if searching:
                 return dP - secondary_deltaP
@@ -593,7 +703,8 @@ def compute_required_area_SG(inputs, verbose=True):
         Q_primary = primary_mdot_channel*primary_avg_cp*primary_dT
         m_dot_high = Q_primary/secondary_dH
         try:
-            secondary_mdot_channel = scipy.optimize.brentq(compute_single_channel, m_dot_low, m_dot_high, rtol=1e-3)
+            secondary_mdot_channel = scipy.optimize.brentq(
+                compute_single_channel, m_dot_low, m_dot_high, rtol=1e-3)
         except ValueError:
             secondary_mdot_channel = m_dot_high
 
@@ -605,7 +716,8 @@ def compute_required_area_SG(inputs, verbose=True):
         else:
             primary_mdot_channel = primary_mdot_total*secondary_mdot_ratio
 
-        outlet_enthalpy = compute_single_channel(secondary_mdot_channel, searching=False)
+        outlet_enthalpy = compute_single_channel(
+            secondary_mdot_channel, searching=False)
         if verbose:
             print("Iteration error:", outlet_enthalpy/secondary_H_outlet)
         if searching:
@@ -613,7 +725,8 @@ def compute_required_area_SG(inputs, verbose=True):
         else:
             return primary_mdot_channel, secondary_mdot_channel
 
-    HX_length = scipy.optimize.brentq(find_HX_length, L_lower_bound, L_upper_bound, rtol=1e-5)
+    HX_length = scipy.optimize.brentq(
+        find_HX_length, L_lower_bound, L_upper_bound, rtol=1e-5)
     primary_mdot_channel, secondary_mdot_channel = find_HX_length(HX_length, searching=False)
 
     fluid_sat = PropsSI('H', 'P', secondary_P, 'Q', 0, "Water")
@@ -695,7 +808,13 @@ def compute_required_area_SG(inputs, verbose=True):
         if x_e > 1:
             DNB = True
         elif x_e > 0:
-            CHF = ((.008/D_h)**0.5)*interpolate_CHF(G_scale, secondary_G, x_scale, x_e, P_scale, secondary_P, q_crit)
+            CHF = ((.008/D_h)**0.5)*interpolate_CHF(G_scale,
+                                                    secondary_G,
+                                                    x_scale,
+                                                    x_e,
+                                                    P_scale,
+                                                    secondary_P,
+                                                    q_crit)
             DNB = Q_step/hx_area > CHF
 
     # At this point water has reached the superheated vapor state and boiling is no longer occurring
@@ -782,7 +901,9 @@ def _compute_subcooled_step(D_h,
     else:
         primary_f = compute_friction_factor(primary_Re)
         if primary_Re > 2300:
-            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+            primary_Nu = compute_Nu_Gnielinski(primary_Re,
+                                               primary_Pr,
+                                               primary_f)
         else:
             primary_Nu = 4.036
     primary_htc = primary_Nu*primary_k/D_h
@@ -807,7 +928,9 @@ def _compute_subcooled_step(D_h,
     secondary_f = compute_friction_factor(secondary_Re)
     secondary_Pr = secondary_mu*secondary_cp/secondary_k
     if secondary_Re > 2300:
-        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re,
+                                             secondary_Pr,
+                                             secondary_f)
     else:
         secondary_Nu = 4.036
     secondary_htc = secondary_Nu*secondary_k/D_h
@@ -821,7 +944,8 @@ def _compute_subcooled_step(D_h,
     T_wall = secondary_T + (primary_T-secondary_T)*secondary_R/R
     q_prime = Q/A
     surface_tension = PropsSI('I', 'P', secondary_P, 'Q', 0, 'Water')
-    h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI('H', 'P', secondary_P, 'Q', 0, 'Water')
+    h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI(
+        'H', 'P', secondary_P, 'Q', 0, 'Water')
     criteria = np.sqrt(8*surface_tension*T_sat*q_prime/(secondary_k*h_fg*rho_g))
 
     # If subcooled boiling is occurring at this node, the heat transfer must be recalculated for
@@ -857,7 +981,9 @@ def _compute_nucleate_boiling_step(D_h,
     else:
         primary_f = compute_friction_factor(primary_Re)
         if primary_Re > 2300:
-            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+            primary_Nu = compute_Nu_Gnielinski(primary_Re,
+                                               primary_Pr,
+                                               primary_f)
         else:
             primary_Nu = 4.036
     primary_htc = primary_Nu*primary_k/D_h
@@ -903,8 +1029,19 @@ def _compute_nucleate_boiling_step(D_h,
     # an iterative solution is required.
     def _converge_nucleate_boiling(T_wall):
         sigma = PropsSI('I', 'P', secondary_P, 'Q', 0, 'Water')
-        h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI('H', 'P', secondary_P, 'Q', 0, 'Water')
-        htc_nb = compute_Nu_Chen(secondary_Re, k_l, cp_l, rho_l, sigma, mu_l, h_fg, rho_g, T_wall, T_sat, F)
+        h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI(
+            'H', 'P', secondary_P, 'Q', 0, 'Water')
+        htc_nb = compute_Nu_Chen(secondary_Re,
+                                 k_l,
+                                 cp_l,
+                                 rho_l,
+                                 sigma,
+                                 mu_l,
+                                 h_fg,
+                                 rho_g,
+                                 T_wall,
+                                 T_sat,
+                                 F)
         htc = htc_c + htc_nb
 
         secondary_R = (htc*A)**-1
@@ -916,8 +1053,19 @@ def _compute_nucleate_boiling_step(D_h,
 
     T_wall = scipy.optimize.brentq(_converge_nucleate_boiling, primary_T, T_sat)
     sigma = PropsSI('I', 'P', secondary_P, 'Q', 0, 'Water')
-    h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI('H', 'P', secondary_P, 'Q', 0, 'Water')
-    htc_nb = compute_Nu_Chen(secondary_Re, k_l, cp_l, rho_l, sigma, mu_l, h_fg, rho_g, T_wall, T_sat, F)
+    h_fg = PropsSI('H', 'P', secondary_P, 'Q', 1, 'Water') - PropsSI(
+        'H', 'P', secondary_P, 'Q', 0, 'Water')
+    htc_nb = compute_Nu_Chen(secondary_Re,
+                             k_l,
+                             cp_l,
+                             rho_l,
+                             sigma,
+                             mu_l,
+                             h_fg,
+                             rho_g,
+                             T_wall,
+                             T_sat,
+                             F)
     htc = htc_c + htc_nb
 
     secondary_R = (htc*A)**-1
@@ -950,17 +1098,18 @@ def _compute_nucleate_boiling_step(D_h,
 
         rho_m = (x/rho_g + (1-x)/rho_l)
 
-        friction_multiplier = compute_two_phase_friction_multiplier(x,
-                                                                    secondary_G,
-                                                                    D_h,
-                                                                    sigma,
-                                                                    rho_l,
-                                                                    rho_g,
-                                                                    rho_m,
-                                                                    mu_l,
-                                                                    mu_g,
-                                                                    f_lo,
-                                                                    f_go)
+        friction_multiplier = compute_two_phase_friction_multiplier(
+            x,
+            secondary_G,
+            D_h,
+            sigma,
+            rho_l,
+            rho_g,
+            rho_m,
+            mu_l,
+            mu_g,
+            f_lo,
+            f_go)
         dP = friction_multiplier*0.5*f_lo*rho_l*v_lo**2*L/D_h
     return Q, dP, x_e_departure
 
@@ -988,7 +1137,9 @@ def _compute_superheated_step(D_h,
     else:
         primary_f = compute_friction_factor(primary_Re)
         if primary_Re > 2300:
-            primary_Nu = compute_Nu_Gnielinski(primary_Re, primary_Pr, primary_f)
+            primary_Nu = compute_Nu_Gnielinski(primary_Re,
+                                               primary_Pr,
+                                               primary_f)
         else:
             primary_Nu = 4.036
     primary_htc = primary_Nu*primary_k/D_h
@@ -1015,7 +1166,9 @@ def _compute_superheated_step(D_h,
     secondary_f = compute_friction_factor(secondary_Re)
     secondary_Pr = secondary_mu*secondary_cp/secondary_k
     if secondary_Re > 2300:
-        secondary_Nu = compute_Nu_Gnielinski(secondary_Re, secondary_Pr, secondary_f)
+        secondary_Nu = compute_Nu_Gnielinski(secondary_Re,
+                                             secondary_Pr,
+                                             secondary_f)
     else:
         secondary_Nu = 4.036
     secondary_htc = secondary_Nu*secondary_k/D_h
@@ -1046,17 +1199,18 @@ def _compute_superheated_step(D_h,
 
         rho_m = (x/rho_g + (1-x)/rho_l)
 
-        friction_multiplier = compute_two_phase_friction_multiplier(x,
-                                                                    secondary_G,
-                                                                    D_h,
-                                                                    sigma,
-                                                                    rho_l,
-                                                                    rho_g,
-                                                                    rho_m,
-                                                                    mu_l,
-                                                                    mu_g,
-                                                                    f_lo,
-                                                                    f_go)
+        friction_multiplier = compute_two_phase_friction_multiplier(
+            x,
+            secondary_G,
+            D_h,
+            sigma,
+            rho_l,
+            rho_g,
+            rho_m,
+            mu_l,
+            mu_g,
+            f_lo,
+            f_go)
         dP = friction_multiplier*0.5*f_lo*rho_l*v_lo**2*L/D_h
 
     return Q, dP
