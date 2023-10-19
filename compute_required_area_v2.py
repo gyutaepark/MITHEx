@@ -4,8 +4,9 @@ import sdf
 import scipy.optimize
 from CoolProp.CoolProp import PropsSI
 from th_functions import fluid_properties, saturated_liquid_properties, saturated_vapor_properties, compute_Nu_Dittus_Boelter, compute_Nu_Gnielinski, \
-    compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS, compute_k_SS304, compute_k_SS316, compute_NTU_counterflow, compute_friction_factor, \
-    compute_equilibrium_quality, compute_flow_quality, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier, compute_pressure_drop
+    compute_Nu_Seban_Shimazaki, compute_Nu_Chen, compute_k_SS, compute_k_SS304, compute_k_SS316, compute_rho_SS, compute_NTU_counterflow, \
+    compute_friction_factor, compute_equilibrium_quality, compute_flow_quality, compute_htc_Dittus_Boelter, compute_two_phase_friction_multiplier, \
+    compute_pressure_drop
 
 def compute_required_area(inputs):
     # initialize thermal inputs
@@ -63,7 +64,6 @@ def compute_required_area(inputs):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_hot, secondary_P)
         secondary_cold = fill_out_parameters(
             Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
-
     # Initialize geometry
     plate_thickness = np.array([
         inputs["HX1 Plate thickness (m)"],
@@ -216,12 +216,12 @@ def compute_required_area(inputs):
         if not searching:
             return Q_single_channel
 
-        return [abs(L1 - L_calculated1), abs(L2 - L_calculated2)]
+        return [(L1 - L_calculated1), (L2 - L_calculated2)]
 
     # Initialize bounds of heat exchanger length solver
     L_lower_bound = inputs["HX length lower bound (m)"]
     L_upper_bound = inputs["HX length upper bound (m)"]
-    res = scipy.optimize.root(determine_HX_length, [1, 1])
+    res = scipy.optimize.root(determine_HX_length, [1, 2])
     HX_Ls = res.x
 
     # Determine flow velocities by finding the limiting pressure drop
@@ -387,7 +387,13 @@ def compute_required_area(inputs):
     channel_thicknesses = 3*plate_thickness + D
     channel_widths = plate_thickness + D
     channel_volumes = channel_thicknesses*channel_widths*HX_Ls
+    channel_volumes_tot = np.pi*(D/2)**2*HX_Ls*np.array(
+        [num_channels1, num_channels2])
     HX_volumes = channel_volumes*np.array([num_channels1, num_channels2])
+    HX_volumes_wo_channels = HX_volumes - channel_volumes_tot
+    HX_masses = (
+        np.array([compute_rho_SS(plate_material[0]), plate_material[1]])
+        *HX_volumes_wo_channels)
 
     # Store results to be displayed
     results = {}
@@ -426,6 +432,8 @@ def compute_required_area(inputs):
     results["HX2 Length (m)"] = HX_Ls[1]
     results["HX1 Volume (m3)"] = HX_volumes[0]
     results["HX2 Volume (m3)"] = HX_volumes[1]
+    results["HX1 Mass (kg)"] = HX_masses[0]
+    results["HX2 Mass (kg)"] = HX_masses[1]
     return results
 
 def _compute_velocity(v, rho, D, mu, L, deltaP, rho_1=None, rho_2=None):

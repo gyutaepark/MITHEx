@@ -101,7 +101,7 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     if secondary_fluid == "Water" or secondary_fluid == "CarbonDioxide":
         h_4r = PropsSI("H", "S", s_3, "P", P_1, secondary_fluid)
         dH_3_4 = e_turbine*(h_3-h_4r)
-        Q_turbine = secondary_mdot*dH_3_4
+        Q_turbine = secondary_mdot*dH_3_4*e_turbine
     elif secondary_fluid == "Air":
         C_v = PropsSI("O", "T", T_3, "P", P_3, secondary_fluid)
         C_p = PropsSI("C", "T", T_3, "P", P_3, secondary_fluid)
@@ -128,6 +128,7 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     Q_pump_secondary += dP_secondary*secondary_mdot/secondary_rho/e_pump
 
     # Efficiency Calculation
+    e_thermal = (Q_turbine-Q_pump_secondary)/Q_in
     e_cycle = (Q_turbine-Q_pump_primary-Q_pump_intermediate
                -Q_pump_secondary)/Q_in
 
@@ -136,6 +137,7 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     results["Intermediate Pump Power (MW)"] = Q_pump_intermediate/1e6
     results["Compressor Power (MW)"] = Q_pump_secondary/1e6
     results["Turbine Power (MW)"] = Q_turbine/1e6
+    results["Thermal Efficiency"] = e_thermal
     results["Cycle Efficiency"] = e_cycle
 
     return results

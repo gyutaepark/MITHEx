@@ -151,6 +151,15 @@ def compute_k_SS(T, mat):
         raise ValueError(f"Given plate material of {mat}"
                          + " is not currently supported.")
 
+def compute_rho_SS(mat):
+    if mat == "SS304":
+        return 7930
+    elif mat == "SS316":
+        return 8000
+    else:
+        raise ValueError(f"Given plate material of {mat}"
+                         + " is not currently supported.")
+
 def compute_friction_factor(Re):
     if Re < 2300:
         f = 64/Re
