@@ -111,14 +111,11 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
         Q_turbine = secondary_mdot*(h_3-h_4)*e_turbine
 
     # Primary Loop Pump Work
-    dP_primary = (dP_core_primary + loop_res['Primary Pipe Pressure Drop (Pa)']
-                  + loop_res['Primary HX Pressure Drop (Pa)'])*2
+    dP_primary = loop_res['Primary Total Pressure Drop (Pa)']
     Q_pump_primary = dP_primary*primary_mdot/primary_rho/e_pump
 
     # Intermediate Loop Pump Work
-    dP_intermediate = (loop_res['Intermediate Pipe Pressure Drop (Pa)']
-                       + loop_res['Intermediate HX1 Pressure Drop (Pa)']
-                       + loop_res['Intermediate HX2 Pressure Drop (Pa)'])*2
+    dP_intermediate = loop_res['Intermediate Total Pressure Drop (Pa)']
     Q_pump_intermediate = dP_intermediate*intermediate_mdot/intermediate_rho/e_pump
 
     # Secondary Pump Work for pressure drop
