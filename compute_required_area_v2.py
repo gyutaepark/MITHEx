@@ -221,7 +221,7 @@ def compute_required_area(inputs):
     # Initialize bounds of heat exchanger length solver
     L_lower_bound = inputs["HX length lower bound (m)"]
     L_upper_bound = inputs["HX length upper bound (m)"]
-    res = scipy.optimize.root(determine_HX_length, [1, 2])
+    res = scipy.optimize.root(determine_HX_length, [0.5, 1])
     HX_Ls = res.x
 
     # Determine flow velocities by finding the limiting pressure drop
@@ -392,44 +392,53 @@ def compute_required_area(inputs):
     HX_volumes = channel_volumes*np.array([num_channels1, num_channels2])
     HX_volumes_wo_channels = HX_volumes - channel_volumes_tot
     HX_masses = (
-        np.array([compute_rho_SS(plate_material[0]), plate_material[1]])
-        *HX_volumes_wo_channels)
+        np.array([
+            compute_rho_SS(plate_material[0]),
+            compute_rho_SS(plate_material[1])
+        ])*HX_volumes_wo_channels)
 
     # Store results to be displayed
     results = {}
     results["Primary Re"] = primary_Re
-    results["Primary Nu"] = primary_Nu
-    results["Primary htc (W/m2)"] = primary_h
-    results["Primary Velocity (m/s)"] = primary_velocity
-    results["Primary Channel Mass Flow Rate (kg/s)"] = primary_mdot_channel
-    results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
-    results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
-    results["Primary Pressure Drop (Pa)"] = primary_dP
     results["Intermediate Re"] = intermediate_Re
+    results["Secondary Re"] = secondary_Re
+    results["Primary Nu"] = primary_Nu
     results["Intermediate Nu"] = intermediate_Nu
+    results["Secondary Nu"] = secondary_Nu
+    results["Primary htc (W/m2)"] = primary_h
     results["Intermediate htc (W/m2)"] = intermediate_h
+    results["Secondary htc (W/m2)"] = secondary_h
+
+    results["Primary Velocity (m/s)"] = primary_velocity
     results["Intermediate Velocity (m/s)"] = intermediate_velocity
+    results["Secondary Velocity"] = secondary_velocity
+
+    results["Primary Channel Mass Flow Rate (kg/s)"] = primary_mdot_channel
     results[
         "Intermediate Channel Mass Flow Rate (kg/s)"] = intermediate_mdot_channel
-    results["Intermediate Mass Flow Rate (kg/s)"] = intermediate_mdot
-    results["Intermediate Mass Flux (kg/m2/s)"] = intermediate_mass_flux
-    results["Intermediate Pressure Drop 1 (Pa)"] = intermediate_dP1
-    results["Intermediate Pressure Drop 2 (Pa)"] = intermediate_dP2
-    # results["Intermediate Pump Work [MW]"] = Q_intpump/1e6
-    results["Secondary Re"] = secondary_Re
-    results["Secondary Nu"] = secondary_Nu
-    results["Secondary htc (W/m2)"] = secondary_h
-    results["Secondary Velocity"] = secondary_velocity
     results["Secondary Channel Mass Flow Rate (kg/s)"] = secondary_mdot_channel
+
+    results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
+    results["Intermediate Mass Flow Rate (kg/s)"] = intermediate_mdot
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
+    results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
+    results["Intermediate Mass Flux (kg/m2/s)"] = intermediate_mass_flux
     results["Secondary Mass Flux (kg/m2/s)"] = secondary_mass_flux
-    results["Secondary Pressure Drop (Pa)"] = secondary_dP
+
+    results["Primary HX Pressure Drop (Pa)"] = primary_dP
+    results["Intermediate HX1 Pressure Drop (Pa)"] = intermediate_dP1
+    results["Intermediate HX2 Pressure Drop (Pa)"] = intermediate_dP2
+    results["Secondary HX Pressure Drop (Pa)"] = secondary_dP
+
     results["Overall HTC 1 (W/m2/s)"] = U1
     results["Overall HTC 2 (W/m2/s)"] = U2
+
     results["HX1 Number of Channels"] = num_channels1
     results["HX2 Number of Channels"] = num_channels2
     results["HX1 Length (m)"] = HX_Ls[0]
     results["HX2 Length (m)"] = HX_Ls[1]
+    results["HX1 Coolant Volume (m3)"] = channel_volumes_tot[0]
+    results["HX2 Coolant Volume (m3)"] = channel_volumes_tot[1]
     results["HX1 Volume (m3)"] = HX_volumes[0]
     results["HX2 Volume (m3)"] = HX_volumes[1]
     results["HX1 Mass (kg)"] = HX_masses[0]
