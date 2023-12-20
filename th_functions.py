@@ -115,23 +115,27 @@ def compute_flow_quality(x_e, x_e_departure):
     return x
 
 def compute_Na_cp(T):
-    cp = 1.6582 - 8.4790e-4*T + 4.4541e-7*T**2
-    return cp*1000
+    # cp = (1.6582 - 8.4790e-4*T + 4.4541e-7*T**2)*1e3
+    cp = -3.001e6*(T**-2) + 1658 - 0.8479*T + 4.454e-4*(T**2)
+    return cp
 
 def compute_Na_k(T):
-    k = 124.67 - 0.11381*T + 5.5226e-5*T**2 - 1.1842e-8*T**3
+    # k = 124.67 - 0.11381*T + 5.5226e-5*T**2 - 1.1842e-8*T**3
+    k = 104 - 0.047*T
     return k
 
 def compute_Na_rho(T):
-    T_c = 2503.7
-    rho_c = 219.
-    f = 275.32
-    g = 511.58
-    rho = rho_c + f*(1 - T/T_c) + g*(1 - T/T_c)**0.5
+    # T_c = 2503.7
+    # rho_c = 219.
+    # f = 275.32
+    # g = 511.58
+    # rho = rho_c + f*(1 - T/T_c) + g*(1 - T/T_c)**0.5
+    rho = 1015.03 - 0.23393*T - 0.305e-5*(T**2)
     return rho
 
 def compute_Na_mu(T):
-    mu = np.exp(-6.4406 - 0.3958*np.log(T) + 556.835/T)
+    # mu = np.exp(-6.4406 - 0.3958*np.log(T) + 556.835/T)
+    mu = np.exp(556.835/T - 0.3958*np.log(T) - 6.4406)
     return mu
 
 def compute_k_SS304(T):
