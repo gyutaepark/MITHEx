@@ -34,36 +34,30 @@ def compute_required_area(inputs):
     secondary_mdot   = inputs["Secondary Mass Flow Rate (kg/s)"]
     secondary_P      = Q_(inputs["Secondary Pressure (kPa)"], 'kPa').m_as('Pa')
     secondary_deltaP = Q_(inputs["Secondary Pressure Drop (kPa)"], 'kPa').m_as('Pa')
-    # yapf:enable
     # fill out missing thermal parameters
     if np.isnan(primary_mdot):
         primary_avg_temperature = (primary_hot+primary_cold)/2
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_avg_temperature, primary_P)
-        primary_mdot = fill_out_parameters(
-            Q, primary_cp, T_hot=primary_hot, T_cold=primary_cold)
+        primary_mdot = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, T_cold=primary_cold)
     elif np.isnan(primary_hot):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_cold, primary_P)
-        primary_hot = fill_out_parameters(
-            Q, primary_cp, T_cold=primary_cold, m_dot=primary_mdot)
+        primary_hot = fill_out_parameters(Q, primary_cp, T_cold=primary_cold, m_dot=primary_mdot)
     elif np.isnan(primary_cold):
         primary_cp, primary_k, primary_rho, primary_mu = fluid_properties(primary_fluid, primary_hot, primary_P)
-        primary_cold = fill_out_parameters(
-            Q, primary_cp, T_hot=primary_hot, m_dot=primary_mdot)
+        primary_cold = fill_out_parameters(Q, primary_cp, T_hot=primary_hot, m_dot=primary_mdot)
 
     # fill out missing thermal parameters
     if np.isnan(secondary_mdot):
         secondary_avg_temperature = (secondary_hot+secondary_cold)/2
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_avg_temperature, secondary_P)
-        secondary_mdot = fill_out_parameters(
-            Q, secondary_cp, T_hot=secondary_hot, T_cold=secondary_cold)
+        secondary_mdot = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, T_cold=secondary_cold)
     elif np.isnan(secondary_hot):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_cold, secondary_P)
-        secondary_hot = fill_out_parameters(
-            Q, secondary_cp, T_cold=secondary_cold, m_dot=secondary_mdot)
+        secondary_hot = fill_out_parameters(Q, secondary_cp, T_cold=secondary_cold, m_dot=secondary_mdot)
     elif np.isnan(secondary_cold):
         secondary_cp, secondary_k, secondary_rho, secondary_mu = fluid_properties(secondary_fluid, secondary_hot, secondary_P)
-        secondary_cold = fill_out_parameters(
-            Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
+        secondary_cold = fill_out_parameters(Q, secondary_cp, T_hot=secondary_hot, m_dot=secondary_mdot)
+    # yapf:enable
     # Initialize geometry
     plate_thickness = np.array([
         inputs["HX1 Plate thickness (m)"],
@@ -420,6 +414,8 @@ def compute_required_area(inputs):
 
     results["Primary Mass Flow Rate (kg/s)"] = primary_mdot
     results["Intermediate Mass Flow Rate (kg/s)"] = intermediate_mdot
+    results[
+        "Intermediate Volumetric Flow Rate (m3/s)"] = intermediate_mdot/intermediate_rho
     results["Secondary Mass Flow Rate (kg/s)"] = secondary_mdot
     results["Primary Mass Flux (kg/m2/s)"] = primary_mass_flux
     results["Intermediate Mass Flux (kg/m2/s)"] = intermediate_mass_flux
