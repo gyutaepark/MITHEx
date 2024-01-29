@@ -2,7 +2,6 @@ from units import Q_
 import numpy as np
 from CoolProp.CoolProp import PropsSI
 from th_functions import fluid_properties
-from compute_required_area import fill_out_parameters
 
 def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     """ Calculates the SC-CO2 cycle efficiency based on the results of
@@ -16,8 +15,7 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
         (4->6): Recuperator hot -> cold
         (6->1): Cooler
     """
-    # yapf:disable
-    # Get Loop Values
+    # yapf:disable / Get Loop Values
     ## Primary Loop
     primary_mdot = loop_res["Primary Mass Flow Rate (kg/s)"]
     primary_hot = Q_(loop_res["Primary Hot Temperature (C)"], 'degC').m_as('K')
@@ -153,7 +151,7 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     # Secondary Pump Work for pressure drop
     secondary_rho = PropsSI("D", "T", secondary_min, "P", P_1, secondary_fluid)
     dP_secondary = (loop_res['Secondary HX Pressure Drop (Pa)']
-                    + loop_res['Secondary Pipe Pressure Drop (Pa)'])*2
+                    + loop_res['Secondary Pipe Pressure Drop (Pa)'])*3
     Q_pump_secondary += dP_secondary*secondary_mdot/secondary_rho/e_pump
 
     # Efficiency Calculation
@@ -161,6 +159,16 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     e_cycle = (Q_turbine-Q_pump_primary-Q_pump_intermediate
                -Q_pump_secondary)/Q_in
 
+    # yapf:disable
+    # print(f"(1->2):{T_1-273.15:5.1f}->{T_2-273.15:5.1f} Compressor Work           {Q_pump_secondary:.3e} W")
+    # print(f"(2->5):{T_2-273.15:5.1f}->{T_5-273.15:5.1f} Recuperator cold -> hot   {Q_recup:.3e} W")
+    # print(f"(5->3):{T_5-273.15:5.1f}->{T_3-273.15:5.1f} HX from Intermediate Loop")
+    # print(f"(3->4):{T_3-273.15:5.1f}->{T_4-273.15:5.1f} Turbine Work              {Q_turbine:.3e} W")
+    # print(f"(4->6):{T_4-273.15:5.1f}->{T_6-273.15:5.1f} Recuperator hot -> cold   {Q_recup:.3e} W")
+    # print(f"(6->1):{T_6-273.15:5.1f}->{T_1-273.15:5.1f} Cooler                    {Q_cooler:.3e} W")
+    # print(f"UA_recup: {UA_recup:8.3e} W/K")
+    # print(f"UA_cooler: {UA_cooler:6.3e} W/K")
+    # yapf:enable
     results = {}
     results["Primary Pump Power (MW)"] = Q_pump_primary/1e6
     results["Intermediate Pump Power (MW)"] = Q_pump_intermediate/1e6
