@@ -170,12 +170,12 @@ def compute_cycle_efficiency(loop_res, dP_core_primary=350e3):
     # print(f"UA_cooler: {UA_cooler:6.3e} W/K")
     # yapf:enable
     results = {}
+    results["Recuperator Conductance Area (W/K)"] = UA_recup
+    results["Air Cooler Conductance Area (W/K)"] = UA_cooler
     results["Primary Pump Power (MW)"] = Q_pump_primary/1e6
     results["Intermediate Pump Power (MW)"] = Q_pump_intermediate/1e6
     results["Compressor Power (MW)"] = Q_pump_secondary/1e6
     results["Turbine Power (MW)"] = Q_turbine/1e6
     results["Thermal Efficiency"] = e_thermal
     results["Cycle Efficiency"] = e_cycle
-    results["Recuperator Conductance Area (W/K)"] = UA_recup
-    results["Air Cooler Conductance Area (W/K)"] = UA_cooler
     return results
