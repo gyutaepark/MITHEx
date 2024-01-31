@@ -407,6 +407,7 @@ def compute_required_area(inputs):
     results["Intermediate Channel Mass Flow Rate (kg/s)"] = intermediate_mdot_channel
     results["Secondary Channel Mass Flow Rate (kg/s)"]    = secondary_mdot_channel
     results["Primary Mass Flow Rate (kg/s)"]              = primary_mdot
+    results["Primary Volumetric Flow Rate (m3/s)"]        = primary_mdot/primary_rho
     results["Intermediate Mass Flow Rate (kg/s)"]         = intermediate_mdot
     results["Intermediate Volumetric Flow Rate (m3/s)"]   = intermediate_mdot/intermediate_rho
     results["Secondary Mass Flow Rate (kg/s)"]            = secondary_mdot
@@ -417,8 +418,8 @@ def compute_required_area(inputs):
     results["Intermediate HX1 Pressure Drop (Pa)"]        = intermediate_dP1
     results["Intermediate HX2 Pressure Drop (Pa)"]        = intermediate_dP2
     results["Secondary HX Pressure Drop (Pa)"]            = secondary_dP
-    results["Overall HTC 1 (W/m2/s)"]                     = U1
-    results["Overall HTC 2 (W/m2/s)"]                     = U2
+    results["Overall HTC 1 (W/m2/K)"]                     = U1
+    results["Overall HTC 2 (W/m2/K)"]                     = U2
     results["HX1 Number of Channels"]                     = num_channels1
     results["HX2 Number of Channels"]                     = num_channels2
     results["HX1 Length (m)"]                             = HX_Ls[0]
